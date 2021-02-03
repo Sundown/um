@@ -21,6 +21,10 @@ This hobby-project is still a work in progress and may be subject to (repeated) 
 (fizzbuzz 1 101)
 ```
 
+**Warning:**
+
+This interpreter is currently lacking many features one would commonly expect such as IO and a greater math library. These will be added and documented in the future. 
+
 **Running:**
 
 -   First, read the [doc]() (you can't, it doesn't exist yet).
