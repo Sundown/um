@@ -14,13 +14,11 @@ This hobby-project is still a work in progress and may be subject to (repeated) 
         ((% x 15) "FizzBuzz")                       1
         ((% x 3) "Fizz")                            (* n (fact (- n 1)))))
         ((% x 5) "Buzz")
-        (0 x)))                             (fact 12)
-
-    (if (< x y)
-        (fizzbuzz (+ x 1)
-        y)))
-
-(fizzbuzz 1 101)
+        (0 x)))                             (defun fib (n)
+                                                (switch n
+    (if (< x y)                                     (1 0)
+        (fizzbuzz (+ x 1) y)                        (2 1)
+        nil))                                       (n (+ (fib (- n 1)) (fib (- n 2))))))
 ```
 
 **Warning:**
