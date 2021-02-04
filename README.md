@@ -9,12 +9,12 @@ This hobby-project is still a work in progress and may be subject to (repeated) 
 **Example:**
 
 ```lisp
-(defun fizzbuzz (x y)
-    (print (switch 0
-        ((% x 15) "FizzBuzz")
-        ((% x 3) "Fizz")
+(defun fizzbuzz (x y)                       (defun factorial (n)
+    (print (switch 0                            (if (= n 1)
+        ((% x 15) "FizzBuzz")                       1
+        ((% x 3) "Fizz")                            (* n (factorial (- n 1)))))
         ((% x 5) "Buzz")
-        (0 x))) ; else
+        (0 x)))                             (factorial 12)
 
     (if (< x y) (fizzbuzz (+ x 1) y)))
 
@@ -23,7 +23,7 @@ This hobby-project is still a work in progress and may be subject to (repeated) 
 
 **Warning:**
 
-This interpreter is currently lacking many features one would commonly expect such as IO and a greater math library. These will be added and documented in the future. 
+This interpreter is currently lacking many features one would commonly expect such as IO and a greater math library. These will be added and documented in the future.
 
 **Running:**
 
