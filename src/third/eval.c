@@ -219,6 +219,48 @@ start:
 					stack_restore(ss);
 					return MakeErrorCode(ERROR_TYPE);
 				}
+			} else if (op.value.symbol == sym_const.value.symbol) {
+				if (isnil(args) || isnil(cdr(args))) {
+					stack_restore(ss);
+					return MakeErrorCode(ERROR_ARGS);
+				}
+
+				sym = car(args);
+
+				if (!env_get(env, sym.value.symbol, result)._) {
+					if (!result->mutable) { return MakeErrorCode(ERROR_NOMUT); }
+				}
+
+				if (sym.type == pair_t) {
+
+					err = new_closure(env, cdr(sym), cdr(args), result);
+					sym = car(sym);
+
+					if (sym.type != noun_t) {
+						return MakeErrorCode(ERROR_TYPE);
+					}
+
+					result->mutable = false;
+					err = env_assign_eq(env, sym.value.symbol, *result);
+					*result = sym;
+					stack_restore_add(ss, *result);
+					return err;
+				} else if (sym.type == noun_t) {
+					err = eval_expr(car(cdr(args)), env, &val);
+					if (err._) {
+						stack_restore(ss);
+						return err;
+					}
+
+					val.mutable = false;
+					*result = val;
+					err = env_assign_eq(env, sym.value.symbol, val);
+					stack_restore_add(ss, *result);
+					return err;
+				} else {
+					stack_restore(ss);
+					return MakeErrorCode(ERROR_TYPE);
+				}
 			} else if (op.value.symbol == sym_defun.value.symbol) {
 				if (isnil(args) || isnil(cdr(args)) || isnil(cdr(cdr(args)))) {
 					stack_restore(ss);

@@ -1,6 +1,8 @@
 #include "um.h"
 void print_help(FILE* stream);
-bool do_repl = false;
+bool um_global_gc_disabled, um_global_debug_enabled, do_repl = false;
+size_t um_global_symbol_capacity;
+Noun cur_expr;
 /* So glad you could make it */
 int main(int argc, char** argv) {
 	char* file_name = NULL;

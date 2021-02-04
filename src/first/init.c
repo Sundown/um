@@ -1,5 +1,13 @@
 #include "../um.h"
 
+Noun sym_quote, sym_quasiquote, sym_const, sym_unquote, sym_unquote_splicing, sym_def, sym_defun,
+    sym_fn, sym_if, sym_cond, sym_switch, sym_match, sym_mac, sym_apply, sym_cons, sym_sym,
+    sym_string, sym_num, sym_int, sym_char, sym_do, sym_set, sym_true, sym_false, sym_nil_t,
+    sym_pair_t, sym_noun_t, sym_f64_t, sym_i32_t, sym_builtin_t, sym_closure_t, sym_macro_t,
+    sym_string_t, sym_input_t, sym_output_t, sym_error_t, sym_type_t, sym_bool_t;
+
+Noun env;
+
 void um_init() {
 	srand((unsigned)time(0));
 	if (!um_global_symbol_capacity) { um_global_symbol_capacity = 1000; }
@@ -7,12 +15,12 @@ void um_init() {
 
 	symbol_table = malloc(um_global_symbol_capacity * sizeof(char*));
 
-	sym_t = sym_true;
 	sym_quote = intern("quote");
 	sym_quasiquote = intern("quasiquote");
 	sym_unquote = intern("unquote");
 	sym_unquote_splicing = intern("unquote-splicing");
 	sym_def = intern("def");
+	sym_const = intern("const");
 	sym_defun = intern("defun");
 	sym_fn = intern("lambda");
 	sym_if = intern("if");
@@ -51,7 +59,6 @@ void um_init() {
 
 #define ASSIGN_BUILTIN(name, fn_ptr) env_assign(env, intern(name).value.symbol, new_builtin(fn_ptr))
 
-	env_assign(env, sym_t.value.symbol, sym_t);
 	env_assign(env, sym_true.value.symbol, new ((bool)true));
 	env_assign(env, sym_false.value.symbol, new ((bool)false));
 	env_assign(env, intern("nil").value.symbol, nil);
@@ -89,6 +96,9 @@ void um_init() {
 	ASSIGN_BUILTIN("sin", builtin_sin);
 	ASSIGN_BUILTIN("cos", builtin_cos);
 	ASSIGN_BUILTIN("tan", builtin_tan);
+	ASSIGN_BUILTIN("asin", builtin_asin);
+	ASSIGN_BUILTIN("acos", builtin_acos);
+	ASSIGN_BUILTIN("atan", builtin_atan);
 	ASSIGN_BUILTIN("len", builtin_len);
 	ASSIGN_BUILTIN("eval", builtin_eval);
 	ASSIGN_BUILTIN("type", builtin_type);
@@ -109,6 +119,7 @@ void um_init() {
 	ASSIGN_BUILTIN("fn", new_builtin(NULL).value.builtin);
 	ASSIGN_BUILTIN("do", new_builtin(NULL).value.builtin);
 	ASSIGN_BUILTIN("def", new_builtin(NULL).value.builtin);
+	ASSIGN_BUILTIN("const", new_builtin(NULL).value.builtin);
 	ASSIGN_BUILTIN("mac", new_builtin(NULL).value.builtin);
 	ASSIGN_BUILTIN("cond", new_builtin(NULL).value.builtin);
 	ASSIGN_BUILTIN("switch", new_builtin(NULL).value.builtin);
@@ -119,18 +130,18 @@ void um_init() {
 
 	ingest("\
 (def (foldl proc init list)\
-	(if !(null? list)\
+	(if !(nil? list)\
 		(foldl proc (proc init (car list)) (cdr list))\
 		init))");
 
 	ingest("\
 (def (foldr p i l)\
-	(if !(null? l)\
+	(if !(nil? l)\
 		(p (car l) (foldr p i (cdr l)))\
 		i))");
 
 	ingest("\
-(def (null? x)\
+(def (nil? x)\
 	(= x ()))");
 
 	ingest("\
@@ -146,7 +157,7 @@ void um_init() {
 
 	ingest("\
 (def (map proc . arg-lists)\
-	(if !(null? (car arg-lists))\
+	(if !(nil? (car arg-lists))\
 		(cons\
 			(apply proc (unary-map car arg-lists))\
 			(apply map (cons proc (unary-map cdr arg-lists))))\
@@ -192,6 +203,8 @@ void um_init() {
 	ingest("\
 (defun math (fun)\
 	(switch fun\
+		('pi 3.1415926535897931)\
+		('e 2.7182818284590452)\
 		('tan tan)\
 		('range range)\
 		('sqrt (lambda (x) (math::pow x (float 0.5))))\
@@ -199,25 +212,25 @@ void um_init() {
 		('square (lambda (x) (math::pow x 2)))\
 		('cube (lambda (x) (math::pow x 3)))\
 		('min (lambda (x) \
-			(if (null? (cdr x))\
+			(if (nil? (cdr x))\
 				(car x) \
 				(foldl (lambda (a b) (if (< a b) a b)) (car x) (cdr x)))))\
 		('max (lambda (x) \
-			(if (null? (cdr x))\
+			(if (nil? (cdr x))\
 				(car x) \
 				(foldl (lambda (a b) (if (< a b) b a)) (car x) (cdr x)))))\
 		('pow __builtin_pow)))");
 
 	ingest("\
 (def (for-each proc items)\
-  	(if (null? items)\
+  	(if (nil? items)\
    		true\
    		(if ((lambda (x) true) (proc (car items))) \
     			(for-each proc (cdr items)))))");
 
 	ingest("\
 (def (filter pred lst)\
-   	(if (null? lst)\
+   	(if (nil? lst)\
     		()\
     		(if (pred (car lst))\
      			(cons (car lst)\

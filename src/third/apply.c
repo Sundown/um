@@ -1,10 +1,8 @@
 #include "../um.h"
 Error apply(Noun fn, Vector* v_params, Noun* result) {
-	Table_entry* pair_v;
 	Noun arg_names, env, body, a;
 	Error err;
 	size_t index, i;
-	long len1;
 
 	if (fn.type == builtin_t) {
 		return (*fn.value.builtin)(v_params, result);
@@ -43,22 +41,6 @@ Error apply(Noun fn, Vector* v_params, Noun* result) {
 		}
 
 		*result = car(a);
-		return MakeErrorCode(OK);
-	} else if (fn.type == table_t) {
-		len1 = v_params->size;
-		if (len1 != 1 && len1 != 2) { return MakeErrorCode(ERROR_ARGS); }
-
-		pair_v = table_get(fn.value.Table, v_params->data[0]);
-		if (pair_v) {
-			*result = pair_v->v;
-		} else {
-			if (len1 == 2) {
-				*result = v_params->data[1];
-			} else {
-				*result = nil;
-			}
-		}
-
 		return MakeErrorCode(OK);
 	} else {
 		return MakeErrorCode(ERROR_TYPE);

@@ -184,7 +184,7 @@ Error builtin_not(Vector* v_params, Noun* result) {
 		return MakeErrorCode(ERROR_ARGS);
 	}
 
-	*result = v_params->data[0].value.symbol == nil.value.symbol ? sym_true : nil;
+	*result = coerce(v_params->data[0], bool_t).value.bool_v ? new ((bool)false) : sym_true;
 	return MakeErrorCode(OK);
 }
 

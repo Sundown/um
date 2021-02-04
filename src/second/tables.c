@@ -28,27 +28,17 @@ Table_entry* table_entry_new(Noun k, Noun v, Table_entry* next) {
 	return r;
 }
 
-bool table_set(Table* tbl, Noun k, Noun v) {
-	Table_entry* p = table_get(tbl, k);
-	if (p) {
-		p->v = v;
-		return true;
-	} else {
-		table_add(tbl, k, v);
-		return false;
-	}
-}
-
-bool table_set_sym(Table* tbl, char* k, Noun v) {
+Error table_set_sym(Table* tbl, char* k, Noun v) {
 	Table_entry* p = table_get_sym(tbl, k);
 	Noun s = {noun_t, .value.symbol = NULL};
 	if (p) {
+		if (!p->v.mutable) { return MakeErrorCode(ERROR_NOMUT); }
 		p->v = v;
-		return true;
+		return MakeErrorCode(OK);
 	} else {
 		s.value.symbol = k;
 		table_add(tbl, s, v);
-		return false;
+		return MakeErrorCode(OK);
 	}
 }
 
@@ -79,20 +69,6 @@ void table_add(Table* tbl, Noun k, Noun v) {
 	b = &tbl->data[hash_code(k) % tbl->capacity];
 	*b = table_entry_new(k, v, *b);
 	tbl->size++;
-}
-
-Table_entry* table_get(Table* tbl, Noun k) {
-	Table_entry* p;
-	size_t pos;
-	if (tbl->size == 0) { return NULL; }
-	pos = hash_code(k) % tbl->capacity;
-	p = tbl->data[pos];
-	while (p) {
-		if (eq_h(p->k, k)) { return p; }
-		p = p->next;
-	}
-
-	return NULL;
 }
 
 Table_entry* table_get_sym(Table* tbl, char* k) {

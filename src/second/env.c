@@ -21,8 +21,7 @@ Error env_get(Noun env, char* symbol, Noun* result) {
 
 Error env_assign(Noun env, char* symbol, Noun value) {
 	Table* ptbl = cdr(env).value.Table;
-	table_set_sym(ptbl, symbol, value);
-	return MakeErrorCode(OK);
+	return table_set_sym(ptbl, symbol, value);
 }
 
 Error env_assign_eq(Noun env, char* symbol, Noun value) {
@@ -31,6 +30,7 @@ Error env_assign_eq(Noun env, char* symbol, Noun value) {
 		Table* ptbl = cdr(env).value.Table;
 		Table_entry* a = table_get_sym(ptbl, symbol);
 		if (a) {
+			if (!a->v.mutable) { return MakeErrorCode(ERROR_NOMUT); }
 			a->v = value;
 			return MakeErrorCode(OK);
 		}

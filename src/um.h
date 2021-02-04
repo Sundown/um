@@ -39,6 +39,7 @@ typedef enum {
 	ERROR_TYPE,
 	ERROR_FILE,
 	ERROR_USER,
+	ERROR_NOMUT,
 	ERROR_COERCION_FAIL
 } ErrorCode;
 
@@ -64,6 +65,7 @@ static const char* error_string[] = {"",
 				     "Type error",
 				     "File error",
 				     "",
+				     "Cannot mutate constant",
 				     "Coercion error"};
 
 typedef struct Noun Noun;
@@ -73,7 +75,7 @@ typedef Error (*builtin)(struct Vector* v_params, struct Noun* result);
 
 struct Noun {
 	noun_type type;
-	bool constant;
+	bool mutable;
 	union {
 		noun_type type_v;
 		bool bool_v;
@@ -88,7 +90,6 @@ struct Noun {
 		struct Table* Table;
 		Error err_v;
 	} value;
-	bool reference;
 };
 
 struct Pair {
@@ -125,18 +126,18 @@ struct str {
 	struct str* next;
 };
 
-bool um_global_gc_disabled, um_global_debug_enabled;
+extern bool um_global_gc_disabled, um_global_debug_enabled;
 
-static const Noun nil = {nil_t, true, {nil_t}, false};
+static const Noun nil = {nil_t, false, {nil_t}};
 
-Noun sym_t, sym_quote, sym_quasiquote, sym_unquote, sym_unquote_splicing, sym_def, sym_set,
-    sym_defun, sym_fn, sym_if, sym_cond, sym_switch, sym_match, sym_mac, sym_apply, sym_cons,
-    sym_sym, sym_string, sym_num, sym_int, sym_char, sym_do, sym_true, sym_false,
+extern Noun sym_quote, sym_const, sym_quasiquote, sym_unquote, sym_unquote_splicing, sym_def,
+    sym_set, sym_defun, sym_fn, sym_if, sym_cond, sym_switch, sym_match, sym_mac, sym_apply,
+    sym_cons, sym_sym, sym_string, sym_num, sym_int, sym_char, sym_do, sym_true, sym_false,
 
     sym_nil_t, sym_pair_t, sym_noun_t, sym_f64_t, sym_i32_t, sym_builtin_t, sym_closure_t,
     sym_macro_t, sym_string_t, sym_input_t, sym_output_t, sym_error_t, sym_type_t, sym_bool_t;
 
-Noun env;
+extern Noun env;
 static size_t stack_capacity = 0;
 static size_t stack_size = 0;
 static Noun* stack = NULL;
@@ -146,10 +147,10 @@ static Table* table_head = NULL;
 static size_t alloc_count = 0;
 static size_t alloc_count_old = 0;
 char** symbol_table;
-size_t symbol_size;
-size_t um_global_symbol_capacity;
-static Noun cur_expr;
-static Noun thrown;
+extern size_t symbol_size;
+extern size_t um_global_symbol_capacity;
+extern Noun cur_expr;
+extern Noun thrown;
 
 #define car(p)	    ((p).value.pair_v->car)
 #define cdr(p)	    ((p).value.pair_v->cdr)
@@ -262,10 +263,8 @@ size_t hash_code_sym(char* s);
 
 Noun new_table(size_t capacity);
 void table_add(Table* tbl, Noun k, Noun v);
-Table_entry* table_get(Table* tbl, Noun k);
 Table_entry* table_get_sym(Table* tbl, char* k);
-bool table_set(Table* tbl, Noun k, Noun v);
-bool table_set_sym(Table* tbl, char* k, Noun v);
+Error table_set_sym(Table* tbl, char* k, Noun v);
 
 #define DECLARE_BUILTIN(name) Error builtin_##name(Vector* v_params, Noun* result)
 
@@ -291,6 +290,9 @@ DECLARE_BUILTIN(trunc);
 DECLARE_BUILTIN(sin);
 DECLARE_BUILTIN(cos);
 DECLARE_BUILTIN(tan);
+DECLARE_BUILTIN(asin);
+DECLARE_BUILTIN(acos);
+DECLARE_BUILTIN(atan);
 DECLARE_BUILTIN(not );
 DECLARE_BUILTIN(pairp);
 DECLARE_BUILTIN(type);
