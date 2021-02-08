@@ -75,7 +75,7 @@ typedef Error (*builtin)(struct Vector* v_params, struct Noun* result);
 
 struct Noun {
 	noun_type type;
-	bool mutable;
+	bool mut;
 	union {
 		noun_type type_v;
 		bool bool_v;
@@ -128,11 +128,11 @@ struct str {
 
 extern bool um_global_gc_disabled, um_global_debug_enabled;
 
-static const Noun nil = {nil_t, false, {nil_t}};
+static const Noun nil = {.type = nil_t, .mut = false, .value = {.type_v = nil_t}};
 
 extern Noun sym_quote, sym_const, sym_quasiquote, sym_unquote, sym_unquote_splicing, sym_def,
     sym_set, sym_defun, sym_fn, sym_if, sym_cond, sym_switch, sym_match, sym_mac, sym_apply,
-    sym_cons, sym_sym, sym_string, sym_num, sym_int, sym_char, sym_do, sym_true, sym_false,
+    sym_cons, sym_string, sym_num, sym_int, sym_char, sym_do, sym_true, sym_false,
 
     sym_nil_t, sym_pair_t, sym_noun_t, sym_f64_t, sym_i32_t, sym_builtin_t, sym_closure_t,
     sym_macro_t, sym_string_t, sym_input_t, sym_output_t, sym_error_t, sym_type_t, sym_bool_t;
@@ -207,6 +207,14 @@ char* error_to_string(Error e);
 
 Noun cons(Noun car_val, Noun cdr_val);
 
+Noun nil_to_t(Noun x __attribute__((unused)), noun_type t);
+Noun integer_to_t(long x, noun_type t);
+Noun number_to_t(double x, noun_type t);
+Noun noun_to_t(char* x, noun_type t);
+Noun string_to_t(char* x, noun_type t);
+Noun bool_to_t(bool x, noun_type t);
+Noun type_to_t(noun_type x, noun_type t);
+
 Noun intern(const char* s);
 Noun new_builtin(builtin fn);
 Noun new_input(FILE* fp);
@@ -214,7 +222,6 @@ Noun new_output(FILE* fp);
 Error new_closure(Noun env, Noun args, Noun body, Noun* result);
 
 Error interpret_string(const char* text);
-void repl();
 
 Noun new_vector(Vector* v);
 
@@ -305,7 +312,10 @@ DECLARE_BUILTIN(setlist);
 DECLARE_BUILTIN(modulo);
 DECLARE_BUILTIN(pow);
 DECLARE_BUILTIN(cbrt);
+DECLARE_BUILTIN(and);
 
 #undef DECLARE_BUILTIN
+
+void repl();
 
 #endif

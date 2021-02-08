@@ -37,7 +37,7 @@ Noun intern(const char* s) {
 	}
 
 	a.type = noun_t;
-	a.mutable = true;
+	a.mut = true;
 	a.value.symbol = calloc(strlen(s) + 1, sizeof(char));
 	strcpy(a.value.symbol, s);
 	if (symbol_size >= um_global_symbol_capacity) {
@@ -92,7 +92,7 @@ Error new_closure(Noun env, Noun args, Noun body, Noun* result) {
 	}
 
 	*result = cons(env, cons(args, p));
-	result->mutable = true;
+	result->mut = true;
 	result->type = closure_t;
 
 	return MakeErrorCode(OK);
@@ -109,7 +109,7 @@ Noun new_string(char* x) {
 	str_head = s;
 
 	a.type = string_t;
-	a.mutable = true;
+	a.mut = true;
 	stack_add(a);
 
 	return a;

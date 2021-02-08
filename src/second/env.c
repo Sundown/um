@@ -30,7 +30,7 @@ Error env_assign_eq(Noun env, char* symbol, Noun value) {
 		Table* ptbl = cdr(env).value.Table;
 		Table_entry* a = table_get_sym(ptbl, symbol);
 		if (a) {
-			if (!a->v.mutable) { return MakeErrorCode(ERROR_NOMUT); }
+			if (!a->v.mut) { return MakeErrorCode(ERROR_NOMUT); }
 			a->v = value;
 			return MakeErrorCode(OK);
 		}

@@ -1,8 +1,6 @@
 #include "../../../um.h"
 
-inline bool intp(double d) {
-	return isnormal(d) && (d == floor(d));
-}
+#define intp(d) (bool)(isnormal(d) && (d == floor(d)))
 
 Error builtin_add(Vector* v_params, Noun* result) {
 	size_t ac = v_params->size;

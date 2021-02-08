@@ -32,7 +32,7 @@ Error table_set_sym(Table* tbl, char* k, Noun v) {
 	Table_entry* p = table_get_sym(tbl, k);
 	Noun s = {noun_t, .value.symbol = NULL};
 	if (p) {
-		if (!p->v.mutable) { return MakeErrorCode(ERROR_NOMUT); }
+		if (!p->v.mut) { return MakeErrorCode(ERROR_NOMUT); }
 		p->v = v;
 		return MakeErrorCode(OK);
 	} else {

@@ -228,7 +228,7 @@ start:
 				sym = car(args);
 
 				if (!env_get(env, sym.value.symbol, result)._) {
-					if (!result->mutable) { return MakeErrorCode(ERROR_NOMUT); }
+					if (!result->mut) { return MakeErrorCode(ERROR_NOMUT); }
 				}
 
 				if (sym.type == pair_t) {
@@ -240,7 +240,7 @@ start:
 						return MakeErrorCode(ERROR_TYPE);
 					}
 
-					result->mutable = false;
+					result->mut = false;
 					err = env_assign_eq(env, sym.value.symbol, *result);
 					*result = sym;
 					stack_restore_add(ss, *result);
@@ -252,7 +252,7 @@ start:
 						return err;
 					}
 
-					val.mutable = false;
+					val.mut = false;
 					*result = val;
 					err = env_assign_eq(env, sym.value.symbol, val);
 					stack_restore_add(ss, *result);

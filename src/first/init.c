@@ -1,10 +1,10 @@
 #include "../um.h"
 
 Noun sym_quote, sym_quasiquote, sym_const, sym_unquote, sym_unquote_splicing, sym_def, sym_defun,
-    sym_fn, sym_if, sym_cond, sym_switch, sym_match, sym_mac, sym_apply, sym_cons, sym_sym,
-    sym_string, sym_num, sym_int, sym_char, sym_do, sym_set, sym_true, sym_false, sym_nil_t,
-    sym_pair_t, sym_noun_t, sym_f64_t, sym_i32_t, sym_builtin_t, sym_closure_t, sym_macro_t,
-    sym_string_t, sym_input_t, sym_output_t, sym_error_t, sym_type_t, sym_bool_t;
+    sym_fn, sym_if, sym_cond, sym_switch, sym_match, sym_mac, sym_apply, sym_cons, sym_string,
+    sym_num, sym_int, sym_char, sym_do, sym_set, sym_true, sym_false, sym_nil_t, sym_pair_t,
+    sym_noun_t, sym_f64_t, sym_i32_t, sym_builtin_t, sym_closure_t, sym_macro_t, sym_string_t,
+    sym_input_t, sym_output_t, sym_error_t, sym_type_t, sym_bool_t;
 
 Noun env;
 
@@ -31,8 +31,7 @@ void um_init() {
 	sym_mac = intern("mac");
 	sym_apply = intern("apply");
 	sym_cons = intern("cons");
-	sym_sym = intern("sym");
-	sym_string = intern("string");
+	sym_string = intern("str");
 	sym_num = intern("num");
 	sym_int = intern("int");
 	sym_char = intern("char");
@@ -81,38 +80,43 @@ void um_init() {
 	ASSIGN_BUILTIN("car", builtin_car);
 	ASSIGN_BUILTIN("cdr", builtin_cdr);
 	ASSIGN_BUILTIN("cons", builtin_cons);
+
 	ASSIGN_BUILTIN("+", builtin_add);
 	ASSIGN_BUILTIN("-", builtin_subtract);
 	ASSIGN_BUILTIN("*", builtin_multiply);
 	ASSIGN_BUILTIN("/", builtin_divide);
+	ASSIGN_BUILTIN("%", builtin_modulo);
+
+	ASSIGN_BUILTIN(">", builtin_greater);
 	ASSIGN_BUILTIN("<", builtin_less);
 	ASSIGN_BUILTIN("=", builtin_eq);
-	ASSIGN_BUILTIN("%", builtin_modulo);
-	ASSIGN_BUILTIN("~", builtin_eq_l);
+	ASSIGN_BUILTIN("eq?", builtin_eq);
+
+	ASSIGN_BUILTIN("eqv?", builtin_eq_l);
 	ASSIGN_BUILTIN("__builtin_pow", builtin_pow);
 	ASSIGN_BUILTIN("__builtin_cbrt", builtin_cbrt);
 	ASSIGN_BUILTIN("int", builtin_int);
 	ASSIGN_BUILTIN("not", builtin_not);
 	ASSIGN_BUILTIN("sin", builtin_sin);
-	ASSIGN_BUILTIN("cos", builtin_cos);
-	ASSIGN_BUILTIN("tan", builtin_tan);
-	ASSIGN_BUILTIN("asin", builtin_asin);
-	ASSIGN_BUILTIN("acos", builtin_acos);
-	ASSIGN_BUILTIN("atan", builtin_atan);
+	ASSIGN_BUILTIN("__builtin_cos", builtin_cos);
+	ASSIGN_BUILTIN("__builtin_tan", builtin_tan);
+	ASSIGN_BUILTIN("__builtin_asin", builtin_asin);
+	ASSIGN_BUILTIN("__builtin_acos", builtin_acos);
+	ASSIGN_BUILTIN("__builtin_atan", builtin_atan);
 	ASSIGN_BUILTIN("len", builtin_len);
 	ASSIGN_BUILTIN("eval", builtin_eval);
 	ASSIGN_BUILTIN("type", builtin_type);
 	ASSIGN_BUILTIN("exit", builtin_exit);
-	ASSIGN_BUILTIN(">", builtin_greater);
 	ASSIGN_BUILTIN("apply", builtin_apply);
 	ASSIGN_BUILTIN("macex", builtin_macex);
-	ASSIGN_BUILTIN("string", builtin_string);
+	ASSIGN_BUILTIN("str", builtin_string);
 	ASSIGN_BUILTIN("print", builtin_print);
 	ASSIGN_BUILTIN("pair?", builtin_pairp);
 	ASSIGN_BUILTIN("float", builtin_float);
 	ASSIGN_BUILTIN("range", builtin_range);
 	ASSIGN_BUILTIN("coerce", builtin_coerce);
 	ASSIGN_BUILTIN("getlist", builtin_getlist);
+	ASSIGN_BUILTIN("and", builtin_and);
 	ASSIGN_BUILTIN("setlist", builtin_setlist);
 
 	ASSIGN_BUILTIN("if", new_builtin(NULL).value.builtin);
@@ -205,7 +209,12 @@ void um_init() {
 	(switch fun\
 		('pi 3.1415926535897931)\
 		('e 2.7182818284590452)\
-		('tan tan)\
+		('tan __builtin_tan)\
+		('sin __builtin_sin)\
+		('cos __builtin_cos)\
+		('atan __builtin_atan)\
+		('asin __builtin_asin)\
+		('acos __builtin_acos)\
 		('range range)\
 		('sqrt (lambda (x) (math::pow x (float 0.5))))\
 		('cbrt __builtin_cbrt)\

@@ -162,12 +162,12 @@ Error builtin_eq_l(Vector* v_params, Noun* result) {
 		a = v_params->data[i];
 		b = v_params->data[i + 1];
 		if (!eq_l(a, b)) {
-			*result = nil;
+			*result = new ((bool)false);
 			return MakeErrorCode(OK);
 		}
 	}
 
-	*result = sym_true;
+	*result = new ((bool)true);
 	return MakeErrorCode(OK);
 }
 
@@ -273,4 +273,13 @@ Error builtin_float(Vector* v_params, Noun* result) {
 	} else {
 		return MakeErrorCode(ERROR_ARGS);
 	}
+}
+
+Error builtin_and(Vector* v_params, Noun* result) {
+	if (v_params->size != 2) { return MakeErrorCode(ERROR_ARGS); }
+
+	*result = new ((bool)(coerce(v_params->data[0], bool_t).value.bool_v
+			      && coerce(v_params->data[1], bool_t).value.bool_v));
+
+	return MakeErrorCode(OK);
 }

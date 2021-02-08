@@ -1,5 +1,4 @@
 #include "../../um.h"
-#include "coercion.h"
 
 bool eq_pair_h(Noun a, Noun b);
 

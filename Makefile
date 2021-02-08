@@ -1,35 +1,24 @@
-TARGET_PUBLISH = um
-TARGET_DEBUG = debug_um
+TARGET = um
 SRC = $(shell find . -name "*.c")
-DEP = $(shell find . -name "*.h")
 PREFIX ?= /usr/local
-CFLAGS_PUBLISH	+= -march=native -Ofast -std=c11 -lm
-CFLAGS_DEBUG	+= -Wall -W -pedantic -march=native -Ofast -std=c11 -lm
+CFLAGS += -Wall -W -pedantic -march=native -Ofast -std=c11 -lm
 
 .PHONY: all install uninstall clean
 
-all: $(TARGET_PUBLISH)
+all: $(TARGET)
 
-$(TARGET_PUBLISH): $(SRC) $(DEP)
-	$(CC) $(CFLAGS_PUBLISH) $(SRC) -o $@
+$(TARGET): $(SRC)
+	$(CC) $(CFLAGS) $^ -o $@
 
-run: $(TARGET_PUBLISH)
-	./$(TARGET_PUBLISH)
+run: $(TARGET)
+	./$(TARGET)
 
-install: $(TARGET_PUBLISH)
+install: $(TARGET)
 	mkdir -p $(DESTDIR)$(PREFIX)/bin
-	install -m755 $(TARGET_PUBLISH) $(DESTDIR)$(PREFIX)/bin/$(TARGET_PUBLISH)
+	install -m755 $(TARGET) $(DESTDIR)$(PREFIX)/bin/$(TARGET)
 
 clean:
-	$(RM) $(TARGET_PUBLISH)
+	$(RM) $(TARGET)
 
 uninstall:
-	$(RM) $(DESTDIR)$(PREFIX)/bin/$(TARGET_PUBLISH)
-
-$(TARGET_DEBUG): $(SRC) $(DEP)
-	$(CC) $(CFLAGS_DEBUG) $(SRC) -o $@
-
-debug: $(TARGET_DEBUG)
-
-rundebug: $(TARGET_DEBUG)
-	./$(TARGET_DEBUG)
+	$(RM) $(DESTDIR)$(PREFIX)/bin/$(TARGET)
