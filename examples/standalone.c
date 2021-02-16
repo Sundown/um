@@ -29,9 +29,6 @@ repl:
 				fprintf(stdout,
 					"um: we don't track versions.\n");
 				return 0;
-			} else {
-				printf("um: invalid argument: %s\n", argv[i]);
-				print_help(stdout);
 			}
 		} else {
 			/* If file_name already exists and isn't equal to
@@ -50,7 +47,7 @@ repl:
 	}
 
 	if (file_name) {
-		Result err = um_load_file(file_name);
+		um_Result err = um_load_file(file_name);
 		if (err.error._) {
 			fprintf(stderr, "In file %s:\n", file_name);
 			um_print_result(err);

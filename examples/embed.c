@@ -5,7 +5,7 @@ int main(int argc, char** argv) {
 	um_init();
 	/* Define a count function, this code is correct and we don't care about
 	 * the return value but it serves as a fine place to declare ret */
-	Result ret = um_interpret_string(
+	um_Result ret = um_interpret_string(
 	    "(defun count (n) { (print (str \"counting to: \" n)) (defun recurse (n) (if (= n 1) (print \"Done!\") (recurse (- n 1)))) (recurse n)})");
 
 	if (argc > 1) {
