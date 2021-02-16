@@ -27,9 +27,13 @@ This interpreter is currently lacking many features one would commonly expect su
 
 **Running:**
 
--   First, read the [doc]() (you can't, it doesn't exist yet).
--   `make` will compile Um for your system.
--   `make run` and `make install` are also available.
+First, read the [doc]() (you can't, it doesn't exist yet).
+
+Um is not ultimately intented to be a standalone interpreter, however `um_repl()` and `interpret_string()` functions are included as well as accompanying examples within `examples/`.
+
+To build examples run `cd examples/ && make`.
+
+Otherwise `#include path/um.h` in your project and build as you normally would. Specifying `-ansi` or `std=C89/C99` will not work as the interpreter is written in C11. Eventual elimination of C11 extentions will make this C89 compatible but this will take time.
 
 **Inspirations:**
 
