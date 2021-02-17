@@ -1,4 +1,4 @@
-#include "../lib/um.h"
+#include "../um.h"
 
 int main(void) {
 	um_init();

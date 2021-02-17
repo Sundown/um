@@ -1,8 +1,8 @@
 CFLAGS += -Wall -W -pedantic -march=native -Ofast -std=c11 -lm
 
-.PHONY: all repl standalone clean
+.PHONY: math clean
 
 math: math.c
 	$(CC) $(CFLAGS) $^ -o $@
 clean:
-	$(RM) repl embed standalone
+	$(RM) math

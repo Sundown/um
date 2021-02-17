@@ -1,4 +1,4 @@
-#include "../lib/um.h"
+#include "../um.h"
 
 bool do_repl = false;
 /* So glad you could make it */

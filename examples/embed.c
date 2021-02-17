@@ -1,4 +1,4 @@
-#include "../lib/um.h"
+#include "../um.h"
 
 int main(int argc, char** argv) {
 	/* Start the interpreter, instantiate builtins and environment */
