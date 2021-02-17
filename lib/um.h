@@ -44,6 +44,7 @@ typedef enum {
 	builtin_t,
 	closure_t,
 	macro_t,
+	vector_t,
 	string_t,
 	input_t,
 	output_t,
@@ -51,7 +52,7 @@ typedef enum {
 	error_t,
 	type_t,
 	bool_t
-} noun_type;
+} um_NounType;
 
 typedef enum {
 	OK = 0,
@@ -63,12 +64,12 @@ typedef enum {
 	ERROR_USER,
 	ERROR_NOMUT,
 	ERROR_COERCION_FAIL
-} ErrorCode;
+} um_ErrorCode;
 
 typedef struct {
-	ErrorCode _;
+	um_ErrorCode _;
 	char* message;
-} Error;
+} um_Error;
 
 static const char* error_string[] = {"",
 				     "Syntax error",
@@ -80,200 +81,202 @@ static const char* error_string[] = {"",
 				     "Cannot mutate constant",
 				     "Coercion error"};
 
-typedef struct Noun Noun;
-typedef struct Vector Vector;
+typedef struct um_Noun um_Noun;
+typedef struct um_Vector um_Vector;
 
-typedef Error (*builtin)(struct Vector* v_params, struct Noun* result);
+typedef um_Error (*um_Builtin)(struct um_Vector* v_params,
+			       struct um_Noun* result);
 
-struct Noun {
-	noun_type type;
+struct um_Noun {
+	um_NounType type;
 	bool mut;
 	union {
-		noun_type type_v;
+		um_NounType type_v;
 		bool bool_v;
-		Error error_v;
-		double number_v;
-		long integer_v;
-		struct Pair* pair_v;
+		um_Error error_v;
+		double number;
+		long integer;
+		struct um_Pair* pair;
 		char* symbol;
-		struct str* str;
+		struct um_String* um_String;
 		FILE* fp;
-		builtin builtin;
-		struct Table* Table;
-		Error err_v;
+		um_Builtin builtin;
+		um_Vector* vector_v;
+		struct um_Table* um_Table;
+		um_Error err_v;
 	} value;
 };
 
 /* This should be returned by any functions which a user may interract with
  * directly */
-struct Result {
-	Error error;
-	Noun data;
+struct um_Result {
+	um_Error error;
+	um_Noun data;
 };
-typedef struct Result Result;
+typedef struct um_Result um_Result;
 
-struct Pair {
-	struct Noun car, cdr;
+struct um_Pair {
+	struct um_Noun car, cdr;
 	char mark;
-	struct Pair* next;
+	struct um_Pair* next;
 };
-typedef struct Pair Pair;
+typedef struct um_Pair um_Pair;
 
-struct Table_entry {
-	Noun k, v;
-	struct Table_entry* next;
+struct um_TableEntry {
+	um_Noun k, v;
+	struct um_TableEntry* next;
 };
-typedef struct Table_entry Table_entry;
+typedef struct um_TableEntry um_TableEntry;
 
-struct Table {
+struct um_Table {
 	size_t capacity;
 	size_t size;
-	Table_entry** data;
+	um_TableEntry** data;
 	char mark;
-	struct Table* next;
+	struct um_Table* next;
 };
-typedef struct Table Table;
+typedef struct um_Table um_Table;
 
-struct Vector {
-	Noun* data;
-	Noun static_data[8];
+struct um_Vector {
+	um_Noun* data;
+	um_Noun static_data[8];
 	size_t capacity, size;
 };
 
-struct str {
+struct um_String {
 	char* value;
 	char mark;
-	struct str* next;
+	struct um_String* next;
 };
 
 bool um_global_gc_disabled, um_global_debug_enabled;
 
-static const Noun nil
+static const um_Noun nil
     = {.type = nil_t, .mut = false, .value = {.type_v = nil_t}};
 
-Noun sym_quote, sym_const, sym_quasiquote, sym_unquote, sym_unquote_splicing,
+um_Noun sym_quote, sym_const, sym_quasiquote, sym_unquote, sym_unquote_splicing,
     sym_def, sym_set, sym_defun, sym_fn, sym_if, sym_cond, sym_switch,
     sym_match, sym_mac, sym_apply, sym_cons, sym_string, sym_num, sym_int,
     sym_char, sym_do, sym_true, sym_false,
 
     sym_nil_t, sym_pair_t, sym_noun_t, sym_f64_t, sym_i32_t, sym_builtin_t,
-    sym_closure_t, sym_macro_t, sym_string_t, sym_input_t, sym_output_t,
-    sym_error_t, sym_type_t, sym_bool_t;
+    sym_closure_t, sym_macro_t, sym_string_t, sym_vector_t, sym_input_t,
+    sym_output_t, sym_error_t, sym_type_t, sym_bool_t;
 
-Noun env;
+um_Noun env;
 static size_t stack_capacity = 0;
 static size_t stack_size = 0;
-static Noun* stack = NULL;
-static Pair* pair_head = NULL;
-static struct str* str_head = NULL;
-static Table* table_head = NULL;
+static um_Noun* stack = NULL;
+static um_Pair* pair_head = NULL;
+static struct um_String* str_head = NULL;
+static um_Table* table_head = NULL;
 static size_t alloc_count = 0;
 static size_t alloc_count_old = 0;
 char** symbol_table;
 size_t symbol_size;
 size_t um_global_symbol_capacity;
-Noun cur_expr;
-Noun thrown;
+um_Noun cur_expr;
 
 /* clang-format off */
-#define car(p)	    ((p).value.pair_v->car)
-#define cdr(p)	    ((p).value.pair_v->cdr)
+#define car(p)	    ((p).value.pair->car)
+#define cdr(p)	    ((p).value.pair->cdr)
 #define cdr2(p)	    (cdr(p))
 #define pop(n)	    (n = cdr2(n))
-#define isnil(Noun) ((Noun).type == nil_t)
+#define isnil(um_Noun) ((um_Noun).type == nil_t)
 #define isnumber(a) (a.type == f64_t || a.type == i32_t)
 #define getnumber(a)                           \
-	(a.type == f64_t   ? a.value.number_v  \
-	 : a.type == i32_t ? a.value.integer_v \
+	(a.type == f64_t   ? a.value.number  \
+	 : a.type == i32_t ? a.value.integer \
 			   : 0)
 #define ingest(s)                                                         \
 	do {                                                              \
-		Result __tmperr = um_interpret_string(s);                 \
+		um_Result __tmperr = um_interpret_string(s);                 \
 		if (__tmperr.error._) { um_print_error(__tmperr.error); } \
 	} while (0)
-#define MakeErrorCode(c) (Error){c, NULL}
-#define MakeError(c, m)  (Error){c, m}
+#define MakeErrorCode(c) (um_Error){c, NULL}
+#define MakeError(c, m)  (um_Error){c, m}
 #define new(T) _Generic((T),  	\
 	bool: new_bool,      	\
 	long: new_integer,   	\
 	char*: new_string,   	\
 	double: new_number,  	\
-	builtin: new_builtin,	\
-	noun_type: new_type  	\
+	um_Builtin: new_builtin,	\
+	um_NounType: new_type  	\
 )(T)
 
-inline Noun new_number(double x) { return (Noun){f64_t, true, {.number_v = x}}; }
-inline Noun new_integer(long x) { return (Noun){i32_t, true, {.integer_v = x}}; }
-inline Noun new_builtin(builtin fn) { return (Noun){builtin_t, true, {.builtin = fn}}; }
-inline Noun new_type(noun_type t) { return (Noun){type_t, true, {.type_v = t}}; }
-inline Noun new_bool(bool b) { return (Noun){bool_t, true, {.bool_v = b}}; }
+inline um_Noun new_number(double x) { return (um_Noun){f64_t, true, {.number = x}}; }
+inline um_Noun new_integer(long x) { return (um_Noun){i32_t, true, {.integer = x}}; }
+inline um_Noun new_builtin(um_Builtin fn) { return (um_Noun){builtin_t, true, {.builtin = fn}}; }
+inline um_Noun new_type(um_NounType t) { return (um_Noun){type_t, true, {.type_v = t}}; }
+inline um_Noun new_bool(bool b) { return (um_Noun){bool_t, true, {.bool_v = b}}; }
+inline um_Noun new_vector(um_Vector* v) { return (um_Noun){vector_t, true, {.vector_v = v}};}
 /* clang-format on */
 
 /*
 	Begin necessary forward declarations
 */
-Noun cons(Noun car_val, Noun cdr_val);
-Noun intern(const char* buf);
-Noun new_string(char* x);
+um_Noun cons(um_Noun car_val, um_Noun cdr_val);
+um_Noun intern(const char* buf);
+um_Noun new_string(char* x);
 
-void stack_add(Noun a);
+void stack_add(um_Noun a);
 
-Noun integer_to_t(long x, noun_type t);
-Noun number_to_t(double x, noun_type t);
-Noun noun_to_t(char* x, noun_type t);
-Noun string_to_t(char* x, noun_type t);
-Noun bool_to_t(bool x, noun_type t);
-Noun type_to_t(noun_type x, noun_type t);
-Noun nil_to_t(Noun x __attribute__((unused)), noun_type t);
+um_Noun integer_to_t(long x, um_NounType t);
+um_Noun number_to_t(double x, um_NounType t);
+um_Noun noun_to_t(char* x, um_NounType t);
+um_Noun string_to_t(char* x, um_NounType t);
+um_Noun bool_to_t(bool x, um_NounType t);
+um_Noun type_to_t(um_NounType x, um_NounType t);
+um_Noun nil_to_t(um_Noun x __attribute__((unused)), um_NounType t);
 
-bool listp(Noun expr);
-Noun reverse_list(Noun list);
+bool listp(um_Noun expr);
+um_Noun reverse_list(um_Noun list);
 
-Error macex_eval(Noun expr, Noun* result);
-Error eval_expr(Noun expr, Noun env, Noun* result);
+um_Error macex_eval(um_Noun expr, um_Noun* result);
+um_Error eval_expr(um_Noun expr, um_Noun env, um_Noun* result);
 
-Noun env_create(Noun parent, size_t capacity);
-Error env_bind(Noun env, Noun arg_names, Vector* v_params);
-Error env_assign(Noun env, char* symbol, Noun value);
-Error env_get(Noun env, char* symbol, Noun* result);
+um_Noun env_create(um_Noun parent, size_t capacity);
+um_Error env_bind(um_Noun env, um_Noun arg_names, um_Vector* v_params);
+um_Error env_assign(um_Noun env, char* symbol, um_Noun value);
+um_Error env_get(um_Noun env, char* symbol, um_Noun* result);
 
-Noun new_table(size_t capacity);
-Table_entry* table_get_sym(Table* tbl, char* k);
-Error table_set_sym(Table* tbl, char* k, Noun v);
+um_Noun new_table(size_t capacity);
+um_TableEntry* table_get_sym(um_Table* tbl, char* k);
+um_Error table_set_sym(um_Table* tbl, char* k, um_Noun v);
 
 void garbage_collector_consider();
-void garbage_collector_tag(Noun root);
+void garbage_collector_tag(um_Noun root);
 
-void um_print_expr(Noun a);
-void um_print_error(Error e);
-void um_print_result(Result r);
+void um_print_expr(um_Noun a);
+void um_print_error(um_Error e);
+void um_print_result(um_Result r);
 
 size_t hash_code_sym(char* s);
 
-char* str_new();
-char* to_string(Noun a, bool write);
+char* um_new_string();
+char* to_string(um_Noun a, bool write);
 char* append_string(char** dst, char* src);
 
-bool eq_l(Noun a, Noun b);
-bool eq_h(Noun a, Noun b);
-bool eq_pair_l(Noun a, Noun b);
-bool eq_pair_h(Noun a, Noun b);
+bool eq_l(um_Noun a, um_Noun b);
+bool eq_h(um_Noun a, um_Noun b);
+bool eq_pair_l(um_Noun a, um_Noun b);
+bool eq_pair_h(um_Noun a, um_Noun b);
 
 char* readline_fp(char* prompt, FILE* fp);
-Error read_expr(const char* input, const char** end, Noun* result);
+um_Error read_expr(const char* input, const char** end, um_Noun* result);
 
-Noun cons(Noun car_val, Noun cdr_val) {
-	Pair* a;
-	Noun p;
+um_Noun cons(um_Noun car_val, um_Noun cdr_val) {
+	um_Pair* a;
+	um_Noun p;
 	alloc_count++;
 
-	a = (Pair*)calloc(1, sizeof(Pair));
+	a = (um_Pair*)calloc(1, sizeof(um_Pair));
 	a->mark = 0;
 	a->next = pair_head;
 	pair_head = a;
 
 	p.type = pair_t;
-	p.value.pair_v = a;
+	p.value.pair = a;
 
 	car(p) = car_val;
 	cdr(p) = cdr_val;
@@ -283,21 +286,23 @@ Noun cons(Noun car_val, Noun cdr_val) {
 	return p;
 }
 
-void vector_new(Vector* a) {
+void vector_new(um_Vector* a) {
 	a->capacity = sizeof(a->static_data) / sizeof(a->static_data[0]);
 	a->size = 0;
 	a->data = a->static_data;
 }
 
-void vector_add(Vector* a, Noun item) {
+void vector_add(um_Vector* a, um_Noun item) {
 	if (a->size + 1 > a->capacity) {
 		a->capacity *= 2;
 		if (a->data == a->static_data) {
-			a->data = (Noun*)malloc(a->capacity * sizeof(Noun));
-			memcpy(a->data, a->static_data, a->size * sizeof(Noun));
+			a->data
+			    = (um_Noun*)calloc(a->capacity, sizeof(um_Noun));
+			memcpy(
+			    a->data, a->static_data, a->size * sizeof(um_Noun));
 		} else {
-			a->data = (Noun*)realloc(a->data,
-						 a->capacity * sizeof(Noun));
+			a->data = (um_Noun*)realloc(
+			    a->data, a->capacity * sizeof(um_Noun));
 		}
 	}
 
@@ -305,25 +310,27 @@ void vector_add(Vector* a, Noun item) {
 	a->size++;
 }
 
-void vector_clear(Vector* a) {
+void vector_clear(um_Vector* a) {
 	a->size = 0;
 }
 
-void vector_free(Vector* a) {
+void vector_free(um_Vector* a) {
 	if (a->data != a->static_data) free(a->data);
 }
 
-void noun_to_vector(Noun a, Vector* v) {
+void noun_to_vector(um_Noun a, um_Vector* v) {
 	vector_new(v);
 	for (; !isnil(a); a = cdr(a)) { vector_add(v, car(a)); }
 }
 
-Noun vector_to_noun(Vector* a, int start) {
-	Noun r = nil;
-	int i;
-	for (i = a->size - 1; i >= start; i--) { r = cons(a->data[i], r); }
+um_Noun vector_to_noun(um_Vector* a, size_t start) {
+	um_Noun r = nil;
+	size_t i;
+	for (i = start; i < a->size; i++) {
+		if (!isnil(a->data[i])) { r = cons(a->data[i], r); }
+	}
 
-	return r;
+	return reverse_list(r);
 }
 
 void um_repl() {
@@ -334,8 +341,8 @@ void um_repl() {
 		char* line;
 start:
 		p = input;
-		Noun expr;
-		Error err = read_expr(p, &p, &expr);
+		um_Noun expr;
+		um_Error err = read_expr(p, &p, &expr);
 		if (err._ == MakeErrorCode(ERROR_FILE)._) {
 			line = readline_fp("	", stdin);
 			if (!line) break;
@@ -346,7 +353,7 @@ start:
 		}
 
 		if (!err._) {
-			Noun result;
+			um_Noun result;
 			while (1) {
 				err = macex_eval(expr, &result);
 				if (err._) {
@@ -372,8 +379,8 @@ start:
 	putchar('\n');
 }
 
-size_t list_len(Noun xs) {
-	Noun* p = &xs;
+size_t list_len(um_Noun xs) {
+	um_Noun* p = &xs;
 	size_t ret = 0;
 	while (!isnil(*p)) {
 		if (p->type != pair_t) { return ret + 1; }
@@ -385,7 +392,7 @@ size_t list_len(Noun xs) {
 	return ret;
 }
 
-void stack_add(Noun a) {
+void stack_add(um_Noun a) {
 	switch (a.type) {
 		case pair_t:
 		case closure_t:
@@ -399,7 +406,8 @@ void stack_add(Noun a) {
 
 	if (stack_size > stack_capacity) {
 		stack_capacity = stack_size * 2;
-		stack = (Noun*)realloc(stack, stack_capacity * sizeof(Noun));
+		stack = (um_Noun*)realloc(stack,
+					  stack_capacity * sizeof(um_Noun));
 	}
 
 	stack[stack_size - 1] = a;
@@ -409,46 +417,49 @@ void stack_restore(int saved_size) {
 	stack_size = saved_size;
 	if (stack_size < stack_capacity / 4) {
 		stack_capacity = stack_size * 2;
-		stack = (Noun*)realloc(stack, stack_capacity * sizeof(Noun));
+		stack = (um_Noun*)realloc(stack,
+					  stack_capacity * sizeof(um_Noun));
 	}
 
 	garbage_collector_consider();
 }
 
-void stack_restore_add(int saved_size, Noun a) {
+void stack_restore_add(int saved_size, um_Noun a) {
 	stack_size = saved_size;
 	if (stack_size < stack_capacity / 4) {
 		stack_capacity = stack_size * 2;
-		stack = (Noun*)realloc(stack, stack_capacity * sizeof(Noun));
+		stack = (um_Noun*)realloc(stack,
+					  stack_capacity * sizeof(um_Noun));
 	}
 
 	stack_add(a);
 	garbage_collector_consider();
 }
 
-Noun cast(Noun a, noun_type t) {
+um_Noun cast(um_Noun a, um_NounType t) {
 	if (a.type == t) { return a; }
 
 	switch (a.type) {
 		case nil_t: return nil_to_t(nil, t);
-		case i32_t: return integer_to_t(a.value.integer_v, t);
-		case f64_t: return number_to_t(a.value.number_v, t);
+		case i32_t: return integer_to_t(a.value.integer, t);
+		case f64_t: return number_to_t(a.value.number, t);
 		case noun_t: return noun_to_t(a.value.symbol, t);
-		case string_t: return string_to_t(a.value.str->value, t);
+		case string_t: return string_to_t(a.value.um_String->value, t);
 		case bool_t: return bool_to_t(a.value.bool_v, t);
 		case type_t: return type_to_t(a.value.type_v, t);
 		default:
-			return nil; /* TODO can probably add more coercions for
-				       semi-primitive types */
+			return nil; /* TODO can probably add more
+				       coercions for semi-primitive
+				       types */
 	}
 }
 
-char* type_to_string(noun_type a) {
+char* type_to_string(um_NounType a) {
 	switch (a) {
 		case nil_t: return "Nil";
 		case pair_t: return "Pair";
 		case string_t: return "String";
-		case noun_t: return "Noun";
+		case noun_t: return "um_Noun";
 		case f64_t: return "Float";
 		case i32_t: return "Int";
 		case builtin_t: return "Builtin";
@@ -456,15 +467,16 @@ char* type_to_string(noun_type a) {
 		case macro_t: return "Macro";
 		case input_t: return "Input";
 		case output_t: return "Output";
-		case table_t: return "Table";
+		case table_t: return "um_Table";
 		case bool_t: return "Bool";
 		case type_t: return "Type";
 		case error_t: return "Error";
+		case vector_t: return "Vector";
 		default: return "Unknown";
 	}
 }
 
-char* error_to_string(Error e) {
+char* error_to_string(um_Error e) {
 	char* s = calloc(e.message != NULL ? strlen(e.message) : 0 + 27,
 			 sizeof(char));
 	e._ != MakeErrorCode(ERROR_USER)._&& e.message
@@ -474,7 +486,7 @@ char* error_to_string(Error e) {
 	return s;
 }
 
-Noun nil_to_t(Noun x __attribute__((unused)), noun_type t) {
+um_Noun nil_to_t(um_Noun x __attribute__((unused)), um_NounType t) {
 	switch (t) {
 		case nil_t: return nil;
 		case i32_t: return new_integer(0);
@@ -488,7 +500,7 @@ Noun nil_to_t(Noun x __attribute__((unused)), noun_type t) {
 	}
 }
 
-Noun integer_to_t(long x, noun_type t) {
+um_Noun integer_to_t(long x, um_NounType t) {
 	if (t == i32_t) { return new_integer(x); }
 
 	char* buf = NULL;
@@ -510,7 +522,7 @@ Noun integer_to_t(long x, noun_type t) {
 	}
 }
 
-Noun number_to_t(double x, noun_type t) {
+um_Noun number_to_t(double x, um_NounType t) {
 	if (t == f64_t) { return new_number(x); }
 
 	char* buf = NULL;
@@ -532,7 +544,7 @@ Noun number_to_t(double x, noun_type t) {
 	}
 }
 
-Noun noun_to_t(char* x, noun_type t) {
+um_Noun noun_to_t(char* x, um_NounType t) {
 	switch (t) {
 		case pair_t: return cons(intern(x), nil);
 		case noun_t: return intern(x);
@@ -547,7 +559,7 @@ Noun noun_to_t(char* x, noun_type t) {
 	}
 }
 
-Noun string_to_t(char* x, noun_type t) {
+um_Noun string_to_t(char* x, um_NounType t) {
 	switch (t) {
 		case pair_t: return cons(intern(x), nil);
 		case noun_t: return intern(x);
@@ -562,7 +574,7 @@ Noun string_to_t(char* x, noun_type t) {
 	}
 }
 
-Noun bool_to_t(bool x, noun_type t) {
+um_Noun bool_to_t(bool x, um_NounType t) {
 	switch (t) {
 		case bool_t: return new_bool(x);
 		case pair_t: return cons(new_bool(x), nil);
@@ -576,7 +588,7 @@ Noun bool_to_t(bool x, noun_type t) {
 	}
 }
 
-Noun type_to_t(noun_type x, noun_type t) {
+um_Noun type_to_t(um_NounType x, um_NounType t) {
 	switch (t) {
 		case type_t: return new_type(type_t);
 		case noun_t: return intern(error_string[x]);
@@ -587,8 +599,8 @@ Noun type_to_t(noun_type x, noun_type t) {
 	}
 }
 
-Noun intern(const char* s) {
-	Noun a;
+um_Noun intern(const char* s) {
+	um_Noun a;
 	int i;
 
 	for (i = symbol_size - 1; i >= 0; i--) {
@@ -616,8 +628,8 @@ Noun intern(const char* s) {
 	return a;
 }
 
-Error new_closure(Noun env, Noun args, Noun body, Noun* result) {
-	Noun p;
+um_Error new_closure(um_Noun env, um_Noun args, um_Noun body, um_Noun* result) {
+	um_Noun p;
 
 	if (!listp(body)) { return MakeErrorCode(ERROR_SYNTAX); }
 
@@ -644,11 +656,11 @@ Error new_closure(Noun env, Noun args, Noun body, Noun* result) {
 	return MakeErrorCode(OK);
 }
 
-Noun new_string(char* x) {
-	Noun a;
-	struct str* s;
+um_Noun new_string(char* x) {
+	um_Noun a;
+	struct um_String* s;
 	alloc_count++;
-	s = a.value.str = malloc(sizeof(struct str));
+	s = a.value.um_String = calloc(1, sizeof(struct um_String));
 	s->value = x;
 	s->mark = 0;
 	s->next = str_head;
@@ -661,24 +673,24 @@ Noun new_string(char* x) {
 	return a;
 }
 
-Noun new_input(FILE* fp) {
-	Noun a;
+um_Noun new_input(FILE* fp) {
+	um_Noun a;
 	a.type = input_t;
 	a.value.fp = fp;
 	return a;
 }
 
-Noun new_output(FILE* fp) {
-	Noun a;
+um_Noun new_output(FILE* fp) {
+	um_Noun a;
 	a.type = output_t;
 	a.value.fp = fp;
 	return a;
 }
 
-Result um_interpret_string(const char* text) {
-	Error err = MakeErrorCode(OK);
+um_Result um_interpret_string(const char* text) {
+	um_Error err = MakeErrorCode(OK);
 	const char* p = text;
-	Noun expr, result;
+	um_Noun expr, result;
 	while (*p) {
 		if (isspace(*p)) {
 			p++;
@@ -692,49 +704,49 @@ Result um_interpret_string(const char* text) {
 		if (err._) { break; }
 	}
 
-	return (Result){.error = err, .data = result};
+	return (um_Result){.error = err, .data = result};
 }
 
-Error lex(const char* str, const char** start, const char** end) {
+um_Error lex(const char* um_String, const char** start, const char** end) {
 start:
-	str += strspn(str, " \t\r\n");
+	um_String += strspn(um_String, " \t\r\n");
 
-	if (str[0] == '\0') {
+	if (um_String[0] == '\0') {
 		*start = *end = NULL;
 		return MakeErrorCode(ERROR_FILE);
 	}
 
-	*start = str;
+	*start = um_String;
 
-	if (strchr("(){}[]'`!:&.", str[0]) != NULL) {
-		*end = str + 1; /* Normal */
-	} else if (str[0] == ',') {
-		*end = str + (str[1] == '@' ? 2 : 1);
-	} else if (str[0] == '"') {
-		for (str++; *str != 0; str++) {
-			if (*str == '\\') {
-				str++;
-			} else if (*str == '"') {
+	if (strchr("(){}[]'`!:&.", um_String[0]) != NULL) {
+		*end = um_String + 1; /* Normal */
+	} else if (um_String[0] == ',') {
+		*end = um_String + (um_String[1] == '@' ? 2 : 1);
+	} else if (um_String[0] == '"') {
+		for (um_String++; *um_String != 0; um_String++) {
+			if (*um_String == '\\') {
+				um_String++;
+			} else if (*um_String == '"') {
 				break;
 			}
 		}
 
-		*end = str + 1;
-	} else if (str[0] == ';') {
-		str += strcspn(str, "\n");
+		*end = um_String + 1;
+	} else if (um_String[0] == ';') {
+		um_String += strcspn(um_String, "\n");
 		goto start;
 	} else {
-		*end = str + strcspn(str, "(){}[] \t\r\n;");
+		*end = um_String + strcspn(um_String, "(){}[] \t\r\n;");
 	}
 
 	return MakeErrorCode(OK);
 }
 
-Error parse_simple(const char* start, const char* end, Noun* result) {
+um_Error parse_simple(const char* start, const char* end, um_Noun* result) {
 	char *p, *buf, *pt;
 	size_t length = end - start - 2;
-	Error err;
-	Noun a1, a2;
+	um_Error err;
+	um_Noun a1, a2;
 	long len, i;
 	const char* ps;
 
@@ -744,16 +756,16 @@ Error parse_simple(const char* start, const char* end, Noun* result) {
 		if (!haspoint
 		    && ((isnormal(val) && val == floor(val)) || val == 0)) {
 			result->type = i32_t;
-			result->value.integer_v = val;
+			result->value.integer = val;
 		} else {
 			result->type = f64_t;
-			result->value.number_v = val;
+			result->value.number = val;
 		}
 
 		return MakeErrorCode(OK);
 	} else if (start[0] == '"') {
 		result->type = string_t;
-		buf = (char*)malloc(length + 1);
+		buf = (char*)calloc(length + 1, sizeof(char));
 		ps = start + 1;
 		pt = buf;
 
@@ -782,7 +794,7 @@ Error parse_simple(const char* start, const char* end, Noun* result) {
 		return MakeErrorCode(OK);
 	}
 
-	buf = malloc(end - start + 1);
+	buf = calloc(end - start + 1, sizeof(char));
 	memcpy(buf, start, end - start);
 	buf[end - start] = 0;
 
@@ -874,24 +886,24 @@ Error parse_simple(const char* start, const char* end, Noun* result) {
 	return MakeErrorCode(OK);
 }
 
-Error read_list(const char* start, const char** end, Noun* result) {
-	Noun p;
+um_Error read_list(const char* start, const char** end, um_Noun* result) {
+	um_Noun p;
 
 	*end = start;
 	p = *result = nil;
 
 	for (;;) {
 		const char* token;
-		Noun item;
-		Error err;
+		um_Noun item;
+		um_Error err;
 
 		err = lex(*end, &token, end);
 		if (err._) { return err; }
 
 		if (token[0] == ')') { return MakeErrorCode(OK); }
 
-		/* TODO segfault occurs on (0 . 0), not located in following
-		 * block */
+		/* TODO segfault occurs on (0 . 0), not located in
+		 * following block */
 		if (!isnil(p) && token[0] == '.' && *end - token == 1) {
 
 			if (isnil(p)) { return MakeErrorCode(ERROR_SYNTAX); }
@@ -922,14 +934,14 @@ Error read_list(const char* start, const char** end, Noun* result) {
 	}
 }
 
-Error read_prefix(const char* start, const char** end, Noun* result) {
-	Noun p = *result = nil;
+um_Error read_prefix(const char* start, const char** end, um_Noun* result) {
+	um_Noun p = *result = nil;
 	*end = start;
 
 	while (1) {
 		const char* token;
-		Noun item;
-		Error err = lex(*end, &token, end);
+		um_Noun item;
+		um_Error err = lex(*end, &token, end);
 
 		if (err._) { return err; }
 
@@ -946,16 +958,16 @@ Error read_prefix(const char* start, const char** end, Noun* result) {
 	}
 }
 
-Error read_block(const char* start, const char** end, Noun* result) {
-	Noun p = *result = nil;
+um_Error read_block(const char* start, const char** end, um_Noun* result) {
+	um_Noun p = *result = nil;
 	*end = start;
 
 	p = nil;
 
 	while (1) {
 		const char* token;
-		Noun item;
-		Error err = lex(*end, &token, end);
+		um_Noun item;
+		um_Error err = lex(*end, &token, end);
 
 		if (err._) { return err; }
 
@@ -972,9 +984,35 @@ Error read_block(const char* start, const char** end, Noun* result) {
 	}
 }
 
-Error read_expr(const char* input, const char** end, Noun* result) {
+um_Error read_vector(const char* start, const char** end, um_Noun* result) {
+	*result = nil;
+	um_Vector* v = calloc(1, sizeof(um_Vector));
+	vector_new(v);
+	*end = start;
+
+	while (1) {
+		const char* token;
+		um_Noun item;
+		um_Error err = lex(*end, &token, end);
+
+		if (err._) { return err; }
+
+		if (token[0] == ']') {
+			*result = new_vector(v);
+			return MakeErrorCode(OK);
+		}
+
+		err = read_expr(token, end, &item);
+
+		if (err._) { return err; }
+
+		vector_add(v, item);
+	}
+}
+
+um_Error read_expr(const char* input, const char** end, um_Noun* result) {
 	char* token;
-	Error err;
+	um_Error err;
 
 	err = lex(input, (const char**)&token, end);
 	if (err._) { return err; }
@@ -983,38 +1021,44 @@ Error read_expr(const char* input, const char** end, Noun* result) {
 		return read_list(*end, end, result);
 	} else if (token[0] == ')') {
 		return MakeErrorCode(ERROR_SYNTAX);
+	} else if (token[0] == '[') {
+		return read_vector(*end, end, result);
+	} else if (token[0] == ']') {
+		return MakeErrorCode(ERROR_SYNTAX);
 	} else if (token[0] == '{') {
 		return read_block(*end, end, result);
 	} else if (token[0] == '}') {
 		return MakeErrorCode(ERROR_SYNTAX);
-	} else if (token[0] == '[') {
-		Noun n0, n1;
-		Error e0 = read_prefix(*end, end, &n0);
-		if (e0._) { return e0; }
-		n0 = car(cdr(n0));
-		e0 = eval_expr(n0, env, &n1);
-		if (e0._) { return e0; }
-		switch (n1.type) {
-			case i32_t: {
-				*result = cons(intern("getlist"),
-					       cons(n1, cons(nil, nil)));
-				return read_expr(
-				    *end, end, &car(cdr(cdr(*result))));
-			}
-			case type_t: {
-				*result = cons(intern("cast"),
-					       cons(nil, cons(n1, nil)));
-				return read_expr(*end, end, &car(cdr(*result)));
-			}
-			default:
-				return MakeError(
-				    ERROR_ARGS,
-				    "prefix: was not passed a valid prefix");
-		}
+	} /* else if (token[0] == '[') {
+		 um_Noun n0, n1;
+		 um_Error e0 = read_prefix(*end, end, &n0);
+		 if (e0._) { return e0; }
+		 n0 = car(cdr(n0));
+		 e0 = eval_expr(n0, env, &n1);
+		 if (e0._) { return e0; }
+		 switch (n1.type) {
+			 case i32_t: {
+				 *result = cons(intern("getlist"),
+						cons(n1, cons(nil, nil)));
+				 return read_expr(
+				     *end, end, &car(cdr(cdr(*result))));
+			 }
+			 case type_t: {
+				 *result = cons(intern("cast"),
+						cons(nil, cons(n1, nil)));
+				 return read_expr(*end, end,
+	 &car(cdr(*result)));
+			 }
+			 default:
+				 return MakeError(
+				     ERROR_ARGS,
+				     "prefix: was not passed a valid prefix");
+		 }
 
-	} else if (token[0] == ']') {
-		return MakeErrorCode(ERROR_SYNTAX);
-	} else if (token[0] == '\'') {
+	 } else if (token[0] == ']') {
+		 return MakeErrorCode(ERROR_SYNTAX);
+	 }*/
+	else if (token[0] == '\'') {
 		*result = cons(intern("quote"), cons(nil, nil));
 		return read_expr(*end, end, &car(cdr(*result)));
 	} else if (token[0] == ']') {
@@ -1038,9 +1082,9 @@ Error read_expr(const char* input, const char** end, Noun* result) {
 	}
 }
 
-Error apply(Noun fn, Vector* v_params, Noun* result) {
-	Noun arg_names, env, body, a;
-	Error err;
+um_Error apply(um_Noun fn, um_Vector* v_params, um_Noun* result) {
+	um_Noun arg_names, env, body, a;
+	um_Error err;
 	size_t index, i;
 
 	if (fn.type == builtin_t) {
@@ -1060,9 +1104,9 @@ Error apply(Noun fn, Vector* v_params, Noun* result) {
 	} else if (fn.type == string_t) {
 		if (v_params->size != 1) { return MakeErrorCode(ERROR_ARGS); }
 
-		index = (size_t)(v_params->data[0]).value.number_v;
-		*result
-		    = new_string((char[]){fn.value.str->value[index], '\0'});
+		index = (size_t)(v_params->data[0]).value.number;
+		*result = new_string(
+		    (char[]){fn.value.um_String->value[index], '\0'});
 		return MakeErrorCode(OK);
 	} else if (fn.type == pair_t && listp(fn)) {
 		if (v_params->size != 1) { return MakeErrorCode(ERROR_ARGS); }
@@ -1071,7 +1115,7 @@ Error apply(Noun fn, Vector* v_params, Noun* result) {
 			return MakeErrorCode(ERROR_TYPE);
 		}
 
-		index = (size_t)(v_params->data[0]).value.integer_v;
+		index = (size_t)(v_params->data[0]).value.integer;
 		a = fn;
 
 		for (i = 0; i < index; i++) {
@@ -1089,8 +1133,8 @@ Error apply(Noun fn, Vector* v_params, Noun* result) {
 	}
 }
 
-Noun copy_list(Noun list) {
-	Noun a, p;
+um_Noun copy_list(um_Noun list) {
+	um_Noun a, p;
 
 	if (isnil(list)) { return nil; }
 
@@ -1111,22 +1155,22 @@ Noun copy_list(Noun list) {
 	return a;
 }
 
-Noun* list_index(Noun* list, size_t index) {
+um_Noun* list_index(um_Noun* list, size_t index) {
 	size_t i;
-	Noun a = *list;
+	um_Noun a = *list;
 	for (i = 0; i < index; i++) {
 		pop(a);
-		if (isnil(a)) { return (Noun*)&nil; }
+		if (isnil(a)) { return (um_Noun*)&nil; }
 	}
 
 	return &car(a);
 }
 
-Error env_assign_eq(Noun env, char* symbol, Noun value) {
+um_Error env_assign_eq(um_Noun env, char* symbol, um_Noun value) {
 	while (1) {
-		Noun parent = car(env);
-		Table* ptbl = cdr(env).value.Table;
-		Table_entry* a = table_get_sym(ptbl, symbol);
+		um_Noun parent = car(env);
+		um_Table* ptbl = cdr(env).value.um_Table;
+		um_TableEntry* a = table_get_sym(ptbl, symbol);
 		if (a) {
 			if (!a->v.mut) { return MakeErrorCode(ERROR_NOMUT); }
 			a->v = value;
@@ -1139,8 +1183,8 @@ Error env_assign_eq(Noun env, char* symbol, Noun value) {
 	}
 }
 
-Noun reverse_list(Noun list) {
-	Noun tail = nil;
+um_Noun reverse_list(um_Noun list) {
+	um_Noun tail = nil;
 
 	while (!isnil(list)) {
 		tail = cons(car(list), tail);
@@ -1150,8 +1194,8 @@ Noun reverse_list(Noun list) {
 	return tail;
 }
 
-bool listp(Noun expr) {
-	Noun* p = &expr;
+bool listp(um_Noun expr) {
+	um_Noun* p = &expr;
 	while (!isnil(*p)) {
 		if (p->type != pair_t) { return 0; }
 
@@ -1182,11 +1226,11 @@ char* read_file(const char* path) {
 	return buf;
 }
 
-Error eval_expr(Noun expr, Noun env, Noun* result) {
-	Error err;
-	Noun fn, op, args, cond, sym, val, name, macro, *p, r, arg_names;
+um_Error eval_expr(um_Noun expr, um_Noun env, um_Noun* result) {
+	um_Error err;
+	um_Noun fn, op, cond, args, sym, val, name, macro, p, r, arg_names;
 	size_t ss = stack_size;
-	Vector v_params;
+	um_Vector v_params;
 start:
 	stack_add(env);
 	cur_expr = isnil(expr) ? cur_expr : expr;
@@ -1202,18 +1246,18 @@ start:
 
 		if (op.type == noun_t) {
 			if (op.value.symbol == sym_if.value.symbol) {
-				p = &args;
-				while (!isnil(*p)) {
-					if (isnil(cdr(*p))
-					    || (cdr(*p).type == bool_t
-						&& cdr(*p).value.bool_v
+				p = args;
+				while (!isnil(p)) {
+					if (isnil(cdr(p))
+					    || (cdr(p).type == bool_t
+						&& cdr(p).value.bool_v
 						       == false)) {
 
-						expr = car(*p);
+						expr = car(p);
 						goto start;
 					}
 
-					err = eval_expr(car(*p), env, &cond);
+					err = eval_expr(car(p), env, &cond);
 					if (err._) {
 						stack_restore(ss);
 						return err;
@@ -1223,20 +1267,20 @@ start:
 					    && cast(cond, bool_t)
 						   .value.bool_v) {
 
-						expr = car(cdr(*p));
+						expr = car(cdr(p));
 						goto start;
 					}
 
-					p = &cdr(cdr(*p));
+					p = cdr(cdr(p));
 				}
 
 				*result = nil;
 				stack_restore_add(ss, *result);
 				return MakeErrorCode(OK);
 			} else if (op.value.symbol == sym_cond.value.symbol) {
-				Noun list
+				um_Noun list
 				    = !isnil(args) ? reverse_list(args) : nil;
-				Noun n = cons(nil, nil);
+				um_Noun n = cons(nil, nil);
 				while (!isnil(list)) {
 					n = cons(
 					    cons(
@@ -1266,11 +1310,11 @@ start:
 				stack_restore_add(ss, *result);
 				return MakeErrorCode(OK);
 			} else if (op.value.symbol == sym_match.value.symbol) {
-				Noun pred = !isnil(args) ? car(args) : nil;
-				Noun list = !isnil(args) && !isnil(cdr(args))
-					      ? reverse_list(cdr(args))
-					      : nil;
-				Noun n = cons(nil, nil);
+				um_Noun pred = !isnil(args) ? car(args) : nil;
+				um_Noun list = !isnil(args) && !isnil(cdr(args))
+						 ? reverse_list(cdr(args))
+						 : nil;
+				um_Noun n = cons(nil, nil);
 				while (!isnil(list)) {
 					n = cons(
 					    cons(
@@ -1314,11 +1358,11 @@ start:
 				stack_restore_add(ss, *result);
 				return MakeErrorCode(OK);
 			} else if (op.value.symbol == sym_switch.value.symbol) {
-				Noun pred = !isnil(args) ? car(args) : nil;
-				Noun list = !isnil(args) && !isnil(cdr(args))
-					      ? reverse_list(cdr(args))
-					      : nil;
-				Noun n = cons(nil, nil);
+				um_Noun pred = !isnil(args) ? car(args) : nil;
+				um_Noun list = !isnil(args) && !isnil(cdr(args))
+						 ? reverse_list(cdr(args))
+						 : nil;
+				um_Noun n = cons(nil, nil);
 
 				while (!isnil(list)) {
 					n = cons(
@@ -1601,9 +1645,9 @@ start:
 		}
 
 		vector_new(&v_params);
-		p = &args;
-		while (!isnil(*p)) {
-			err = eval_expr(car(*p), env, &r);
+		p = args;
+		while (!isnil(p)) {
+			err = eval_expr(car(p), env, &r);
 			if (err._) {
 				vector_free(&v_params);
 				stack_restore(ss);
@@ -1611,7 +1655,7 @@ start:
 			}
 
 			vector_add(&v_params, r);
-			p = &cdr(*p);
+			p = cdr(p);
 		}
 
 		if (fn.type == closure_t) {
@@ -1634,10 +1678,10 @@ start:
 	}
 }
 
-Error env_get(Noun env, char* symbol, Noun* result) {
+um_Error env_get(um_Noun env, char* symbol, um_Noun* result) {
 	while (1) {
-		Table* ptbl = cdr(env).value.Table;
-		Table_entry* a = table_get_sym(ptbl, symbol);
+		um_Table* ptbl = cdr(env).value.um_Table;
+		um_TableEntry* a = table_get_sym(ptbl, symbol);
 		if (a) {
 			*result = a->v;
 			return MakeErrorCode(OK);
@@ -1649,13 +1693,13 @@ Error env_get(Noun env, char* symbol, Noun* result) {
 	}
 }
 
-Error env_assign(Noun env, char* symbol, Noun value) {
-	Table* ptbl = cdr(env).value.Table;
+um_Error env_assign(um_Noun env, char* symbol, um_Noun value) {
+	um_Table* ptbl = cdr(env).value.um_Table;
 	return table_set_sym(ptbl, symbol, value);
 }
 
-Error destructuring_bind(Noun arg_name, Noun val, Noun env) {
-	Error err;
+um_Error destructuring_bind(um_Noun arg_name, um_Noun val, um_Noun env) {
+	um_Error err;
 	if (isnil(arg_name)) {
 		if (isnil(val)) {
 			return MakeErrorCode(OK);
@@ -1676,10 +1720,10 @@ Error destructuring_bind(Noun arg_name, Noun val, Noun env) {
 	}
 }
 
-Error env_bind(Noun env, Noun arg_names, Vector* v_params) {
-	Noun arg_name, val;
+um_Error env_bind(um_Noun env, um_Noun arg_names, um_Vector* v_params) {
+	um_Noun arg_name, val;
 	int val_unspecified = 0;
-	Error err;
+	um_Error err;
 
 	size_t i = 0;
 	while (!isnil(arg_names)) {
@@ -1712,14 +1756,14 @@ Error env_bind(Noun env, Noun arg_names, Vector* v_params) {
 	return MakeErrorCode(OK);
 }
 
-Noun env_create(Noun parent, size_t capacity) {
+um_Noun env_create(um_Noun parent, size_t capacity) {
 	return cons(parent, new_table(capacity));
 }
 
 void garbage_collector_run() {
-	Pair *a, **p;
-	struct str *as, **ps;
-	Table *at, **pt;
+	um_Pair *a, **p;
+	struct um_String *as, **ps;
+	um_Table *at, **pt;
 	size_t i;
 
 	for (i = 0; i < stack_size; i++) { garbage_collector_tag(stack[i]); }
@@ -1759,9 +1803,9 @@ void garbage_collector_run() {
 		if (!at->mark) {
 			*pt = at->next;
 			for (i = 0; i < at->capacity; i++) {
-				Table_entry* e = at->data[i];
+				um_TableEntry* e = at->data[i];
 				while (e) {
-					Table_entry* next = e->next;
+					um_TableEntry* next = e->next;
 					free(e);
 					e = next;
 					/* If you're reading this,
@@ -1786,18 +1830,18 @@ void garbage_collector_consider() {
 	if (alloc_count > 2 * alloc_count_old) { garbage_collector_run(); }
 }
 
-void garbage_collector_tag(Noun root) {
-	Pair* a;
-	struct str* as;
-	Table* at;
+void garbage_collector_tag(um_Noun root) {
+	um_Pair* a;
+	struct um_String* as;
+	um_Table* at;
 	size_t i;
-	Table_entry* e;
+	um_TableEntry* e;
 start:
 	switch (root.type) {
 		case pair_t:
 		case closure_t:
 		case macro_t:
-			a = root.value.pair_v;
+			a = root.value.pair;
 			if (a->mark) return;
 			a->mark = 1;
 			garbage_collector_tag(car(root));
@@ -1806,12 +1850,12 @@ start:
 			goto start;
 			break;
 		case string_t:
-			as = root.value.str;
+			as = root.value.um_String;
 			if (as->mark) return;
 			as->mark = 1;
 			break;
 		case table_t: {
-			at = root.value.Table;
+			at = root.value.um_Table;
 			if (at->mark) return;
 			at->mark = 1;
 			for (i = 0; i < at->capacity; i++) {
@@ -1829,10 +1873,10 @@ start:
 	}
 }
 
-Error macex(Noun expr, Noun* result) {
-	Error err = MakeErrorCode(OK);
-	Noun args, op, result2;
-	Vector v_params;
+um_Error macex(um_Noun expr, um_Noun* result) {
+	um_Error err = MakeErrorCode(OK);
+	um_Noun args, op, result2;
+	um_Vector v_params;
 	int ss;
 	cur_expr = expr;
 
@@ -1879,8 +1923,8 @@ Error macex(Noun expr, Noun* result) {
 			return MakeErrorCode(OK);
 		} else {
 
-			Noun expr2 = copy_list(expr);
-			Noun h;
+			um_Noun expr2 = copy_list(expr);
+			um_Noun h;
 			for (h = expr2; !isnil(h); h = cdr(h)) {
 				err = macex(car(h), &car(h));
 				if (err._) {
@@ -1896,9 +1940,9 @@ Error macex(Noun expr, Noun* result) {
 	}
 }
 
-char* to_string(Noun a, bool write) {
-	char *s = str_new(), *s2, buf[80];
-	Noun a2;
+char* to_string(um_Noun a, bool write) {
+	char *s = um_new_string(), *s2, buf[80];
+	um_Noun a2;
 	switch (a.type) {
 		case nil_t: append_string(&s, "Nil"); break;
 		case pair_t: {
@@ -1956,15 +2000,15 @@ char* to_string(Noun a, bool write) {
 		case noun_t: append_string(&s, a.value.symbol); break;
 		case string_t:
 			if (write) append_string(&s, "\"");
-			append_string(&s, a.value.str->value);
+			append_string(&s, a.value.um_String->value);
 			if (write) append_string(&s, "\"");
 			break;
 		case i32_t:
-			sprintf(buf, "%ld", a.value.integer_v);
+			sprintf(buf, "%ld", a.value.integer);
 			append_string(&s, buf);
 			break;
 		case f64_t:
-			sprintf(buf, "%.16g", a.value.number_v);
+			sprintf(buf, "%.16g", a.value.number);
 			append_string(&s, buf);
 			break;
 		case builtin_t:
@@ -1999,6 +2043,15 @@ char* to_string(Noun a, bool write) {
 		case error_t:
 			append_string(&s, error_to_string(a.value.error_v));
 			break;
+		case vector_t: {
+			char* l = to_string(vector_to_noun(a.value.vector_v, 0),
+					    write);
+			append_string(&s, l);
+			s[0] = '[';
+			s[strlen(s) - 1] = ']';
+
+			break;
+		}
 		default: append_string(&s, ":Unknown"); break;
 	}
 
@@ -2012,45 +2065,33 @@ char* append_string(char** dst, char* src) {
 	return *dst;
 }
 
-char* str_new() {
+char* um_new_string() {
 	char* s = calloc(1, sizeof(char));
 	s[0] = '\0';
 	return s;
 }
 
-Error macex_eval(Noun expr, Noun* result) {
-	Noun e0;
-	Error err = macex(expr, &e0);
+um_Error macex_eval(um_Noun expr, um_Noun* result) {
+	um_Noun e0;
+	um_Error err = macex(expr, &e0);
 	if (err._) { return err; }
-
 	return eval_expr(e0, env, result);
 }
 
-Result um_load_file(const char* path) {
+um_Result um_load_file(const char* path) {
 	char* text = read_file(path);
 	if (text) {
-		Result err = um_interpret_string(text);
+		um_Result err = um_interpret_string(text);
 		free(text);
 		return err;
 	} else {
-		return (Result){.error = MakeErrorCode(ERROR_FILE),
-				.data = nil};
+		return (um_Result){.error = MakeErrorCode(ERROR_FILE),
+				   .data = nil};
 	}
 }
 
-void print_help(FILE* stream) {
-	fprintf(
-	    stream,
-	    "Usage: um [options] file\n"
-	    "    -nogc\tdisable garbage collection\n"
-	    "    -debug\tenable debug logging during runtime\n"
-	    "    -h\t\tyou_are_here.png\n"
-	    "    -repl\tstart REPL, to be used in conjuction with file input\n"
-	    "    -ss <uint>\tsymbol table size, default 1,000\n"
-	    "    -v\t\tversion, but don't bother\n");
-}
 #define DECLARE_BUILTIN(name) \
-	Error builtin_##name(Vector* v_params, Noun* result)
+	um_Error builtin_##name(um_Vector* v_params, um_Noun* result)
 
 DECLARE_BUILTIN(car);
 DECLARE_BUILTIN(cdr);
@@ -2090,14 +2131,16 @@ DECLARE_BUILTIN(modulo);
 DECLARE_BUILTIN(pow);
 DECLARE_BUILTIN(cbrt);
 DECLARE_BUILTIN(and);
+DECLARE_BUILTIN(vector);
 
 #undef DECLARE_BUILTIN
+
 void um_init() {
 	srand((unsigned)time(0));
 	if (!um_global_symbol_capacity) { um_global_symbol_capacity = 1000; }
 	env = env_create(nil, um_global_symbol_capacity);
 
-	symbol_table = malloc(um_global_symbol_capacity * sizeof(char*));
+	symbol_table = calloc(um_global_symbol_capacity, sizeof(char*));
 
 	sym_quote = intern("quote");
 	sym_quasiquote = intern("quasiquote");
@@ -2116,6 +2159,7 @@ void um_init() {
 	sym_apply = intern("apply");
 	sym_cons = intern("cons");
 	sym_string = intern("str");
+	sym_string = intern("vec");
 	sym_num = intern("num");
 	sym_int = intern("int");
 	sym_char = intern("char");
@@ -2134,6 +2178,7 @@ void um_init() {
 
 	sym_macro_t = intern("@Macro");
 	sym_string_t = intern("@String");
+	sym_vector_t = intern("@Vector");
 	sym_input_t = intern("@Input");
 	sym_output_t = intern("@Output");
 	sym_error_t = intern("@Error");
@@ -2147,20 +2192,23 @@ void um_init() {
 	env_assign(env, sym_false.value.symbol, new ((bool)false));
 	env_assign(env, intern("nil").value.symbol, nil);
 
-	env_assign(env, sym_nil_t.value.symbol, new ((noun_type)nil_t));
-	env_assign(env, sym_pair_t.value.symbol, new ((noun_type)pair_t));
-	env_assign(env, sym_noun_t.value.symbol, new ((noun_type)noun_t));
-	env_assign(env, sym_f64_t.value.symbol, new ((noun_type)f64_t));
-	env_assign(env, sym_i32_t.value.symbol, new ((noun_type)i32_t));
-	env_assign(env, sym_builtin_t.value.symbol, new ((noun_type)builtin_t));
-	env_assign(env, sym_closure_t.value.symbol, new ((noun_type)closure_t));
-	env_assign(env, sym_macro_t.value.symbol, new ((noun_type)macro_t));
-	env_assign(env, sym_string_t.value.symbol, new ((noun_type)string_t));
-	env_assign(env, sym_input_t.value.symbol, new ((noun_type)input_t));
-	env_assign(env, sym_output_t.value.symbol, new ((noun_type)output_t));
-	env_assign(env, sym_error_t.value.symbol, new ((noun_type)error_t));
-	env_assign(env, sym_type_t.value.symbol, new ((noun_type)type_t));
-	env_assign(env, sym_bool_t.value.symbol, new ((noun_type)bool_t));
+	env_assign(env, sym_nil_t.value.symbol, new ((um_NounType)nil_t));
+	env_assign(env, sym_pair_t.value.symbol, new ((um_NounType)pair_t));
+	env_assign(env, sym_noun_t.value.symbol, new ((um_NounType)noun_t));
+	env_assign(env, sym_f64_t.value.symbol, new ((um_NounType)f64_t));
+	env_assign(env, sym_i32_t.value.symbol, new ((um_NounType)i32_t));
+	env_assign(
+	    env, sym_builtin_t.value.symbol, new ((um_NounType)builtin_t));
+	env_assign(
+	    env, sym_closure_t.value.symbol, new ((um_NounType)closure_t));
+	env_assign(env, sym_macro_t.value.symbol, new ((um_NounType)macro_t));
+	env_assign(env, sym_string_t.value.symbol, new ((um_NounType)string_t));
+	env_assign(env, sym_vector_t.value.symbol, new ((um_NounType)vector_t));
+	env_assign(env, sym_input_t.value.symbol, new ((um_NounType)input_t));
+	env_assign(env, sym_output_t.value.symbol, new ((um_NounType)output_t));
+	env_assign(env, sym_error_t.value.symbol, new ((um_NounType)error_t));
+	env_assign(env, sym_type_t.value.symbol, new ((um_NounType)type_t));
+	env_assign(env, sym_bool_t.value.symbol, new ((um_NounType)bool_t));
 
 	ASSIGN_BUILTIN("car", builtin_car);
 	ASSIGN_BUILTIN("cdr", builtin_cdr);
@@ -2176,8 +2224,8 @@ void um_init() {
 	ASSIGN_BUILTIN("<", builtin_less);
 	ASSIGN_BUILTIN("=", builtin_eq);
 	ASSIGN_BUILTIN("eq?", builtin_eq);
-
 	ASSIGN_BUILTIN("eqv?", builtin_eq_l);
+
 	ASSIGN_BUILTIN("__builtin_pow", builtin_pow);
 	ASSIGN_BUILTIN("__builtin_cbrt", builtin_cbrt);
 	ASSIGN_BUILTIN("int", builtin_int);
@@ -2203,6 +2251,7 @@ void um_init() {
 	ASSIGN_BUILTIN("getlist", builtin_getlist);
 	ASSIGN_BUILTIN("and", builtin_and);
 	ASSIGN_BUILTIN("setlist", builtin_setlist);
+	ASSIGN_BUILTIN("__builtin_vector", builtin_vector);
 
 	ASSIGN_BUILTIN("if", new_builtin(NULL).value.builtin);
 	ASSIGN_BUILTIN("fn", new_builtin(NULL).value.builtin);
@@ -2285,6 +2334,7 @@ void um_init() {
 	ingest("\
 (defun std (fun)\
 	(switch fun \
+		('vector __builtin_vector) \
 		('list list) \
 		('map map) \
 		('cast cast)))");
@@ -2338,49 +2388,50 @@ void um_init() {
 
 char* readline_fp(char* prompt, FILE* fp) {
 	size_t size = 80;
-	char* str;
+	char* um_String;
 	int ch;
 	size_t len = 0;
 	printf("%s", prompt);
-	str = calloc(size, sizeof(char));
-	if (!str) { return NULL; }
+	um_String = calloc(size, sizeof(char));
+	if (!um_String) { return NULL; }
 
 	while ((ch = fgetc(fp)) != EOF && ch != '\n') {
-		str[len++] = ch;
+		um_String[len++] = ch;
 		if (len == size) {
-			void* p = realloc(str, sizeof(char) * (size *= 2));
+			void* p
+			    = realloc(um_String, sizeof(char) * (size *= 2));
 			if (!p) {
-				free(str);
+				free(um_String);
 				return NULL;
 			}
 
-			str = p;
+			um_String = p;
 		}
 	}
 
 	if (ch == EOF && len == 0) {
-		free(str);
+		free(um_String);
 		return NULL;
 	}
 
-	str[len++] = '\0';
+	um_String[len++] = '\0';
 
-	return realloc(str, sizeof(char) * len);
+	return realloc(um_String, sizeof(char) * len);
 }
 
-void um_print_expr(Noun a) {
+void um_print_expr(um_Noun a) {
 	char* s = to_string(a, 1);
 	printf("%s", s);
 	free(s);
 }
 
-void um_print_error(Error e) {
+void um_print_error(um_Error e) {
 	char* s = error_to_string(e);
 	printf("%s", s);
 	free(s);
 }
 
-void um_print_result(Result r) {
+void um_print_result(um_Result r) {
 	char* e = error_to_string(r.error);
 	char* d = to_string(r.data, 0);
 
@@ -2390,29 +2441,30 @@ void um_print_result(Result r) {
 	free(d);
 }
 
-bool eq_pair_l(Noun a, Noun b) {
+bool eq_pair_l(um_Noun a, um_Noun b) {
 	if (a.type != pair_t || b.type != pair_t) { return false; }
 
 	return eq_l(car(a), car(b)) && eq_l(cdr(a), cdr(b));
 }
 
-bool eq_pair_h(Noun a, Noun b) {
+bool eq_pair_h(um_Noun a, um_Noun b) {
 	if (a.type != pair_t || b.type != pair_t) { return false; }
 
 	return eq_h(car(a), car(b)) && eq_h(cdr(a), cdr(b));
 }
 
-bool eq_h(Noun a, Noun b) {
+bool eq_h(um_Noun a, um_Noun b) {
 	if (a.type != b.type) { return false; }
 
 	switch (a.type) {
 		case nil_t: return isnil(a) && isnil(b);
-		case i32_t: return a.value.integer_v == b.value.integer_v;
-		case f64_t: return a.value.number_v == b.value.number_v;
+		case i32_t: return a.value.integer == b.value.integer;
+		case f64_t: return a.value.number == b.value.number;
 		/* Equal symbols share memory */
 		case noun_t: return a.value.symbol == b.value.symbol;
 		case string_t:
-			return !strcmp(a.value.str->value, b.value.str->value);
+			return !strcmp(a.value.um_String->value,
+				       b.value.um_String->value);
 		case builtin_t: return a.value.builtin == b.value.builtin;
 		case input_t:
 		case output_t: return a.value.fp == b.value.fp;
@@ -2427,7 +2479,7 @@ bool eq_h(Noun a, Noun b) {
 	}
 }
 
-bool eq_l(Noun a, Noun b) {
+bool eq_l(um_Noun a, um_Noun b) {
 	if (a.type == b.type) {
 		return eq_h(a, b);
 	} else {
@@ -2435,7 +2487,7 @@ bool eq_l(Noun a, Noun b) {
 	}
 }
 
-size_t hash_code(Noun a) {
+size_t hash_code(um_Noun a) {
 	size_t r = 1;
 	switch (a.type) {
 		case nil_t: return 0;
@@ -2454,7 +2506,7 @@ size_t hash_code(Noun a) {
 			return r;
 		case noun_t: return hash_code_sym(a.value.symbol);
 		case string_t: {
-			char* v = a.value.str->value;
+			char* v = a.value.um_String->value;
 			for (; *v != 0; v++) {
 				r *= 31;
 				r += *v;
@@ -2464,7 +2516,7 @@ size_t hash_code(Noun a) {
 		}
 		case f64_t:
 			return (size_t)((void*)a.value.symbol)
-			     + (size_t)a.value.number_v;
+			     + (size_t)a.value.number;
 		case builtin_t: return (size_t)a.value.builtin;
 		case closure_t: return hash_code(cdr(a));
 		case macro_t: return hash_code(cdr(a));
@@ -2478,40 +2530,40 @@ size_t hash_code_sym(char* s) {
 	return (size_t)s / sizeof(s) / 2;
 }
 
-Noun new_table(size_t capacity) {
-	Noun a;
-	Table* s;
+um_Noun new_table(size_t capacity) {
+	um_Noun a;
+	um_Table* s;
 	size_t i;
 	alloc_count++;
-	s = a.value.Table = malloc(sizeof(Table));
+	s = a.value.um_Table = calloc(1, sizeof(um_Table));
 	s->capacity = capacity;
 	s->size = 0;
-	s->data = malloc(capacity * sizeof(Table_entry*));
+	s->data = calloc(capacity, sizeof(um_TableEntry*));
 	for (i = 0; i < capacity; i++) { s->data[i] = NULL; }
 
 	s->mark = 0;
 	s->next = table_head;
 	table_head = s;
-	a.value.Table = s;
+	a.value.um_Table = s;
 	a.type = table_t;
 	stack_add(a);
 	return a;
 }
 
-Table_entry* table_entry_new(Noun k, Noun v, Table_entry* next) {
-	Table_entry* r = malloc(sizeof(*r));
+um_TableEntry* table_entry_new(um_Noun k, um_Noun v, um_TableEntry* next) {
+	um_TableEntry* r = calloc(1, sizeof(*r));
 	r->k = k;
 	r->v = v;
 	r->next = next;
 	return r;
 }
 
-void table_add(Table* tbl, Noun k, Noun v) {
-	Table_entry **b, **data2, *p, **p2, *next;
+void table_add(um_Table* tbl, um_Noun k, um_Noun v) {
+	um_TableEntry **b, **data2, *p, **p2, *next;
 	size_t i, new_capacity;
 	if (tbl->size + 1 > tbl->capacity) {
 		new_capacity = (tbl->size + 1) * 2;
-		data2 = malloc(new_capacity * sizeof(Table_entry*));
+		data2 = calloc(new_capacity, sizeof(um_TableEntry*));
 		for (i = 0; i < new_capacity; i++) { data2[i] = NULL; }
 
 		for (i = 0; i < tbl->capacity; i++) {
@@ -2535,8 +2587,8 @@ void table_add(Table* tbl, Noun k, Noun v) {
 	tbl->size++;
 }
 
-Table_entry* table_get_sym(Table* tbl, char* k) {
-	Table_entry* p;
+um_TableEntry* table_get_sym(um_Table* tbl, char* k) {
+	um_TableEntry* p;
 	size_t pos;
 	if (tbl->size == 0) { return NULL; }
 	pos = hash_code_sym(k) % tbl->capacity;
@@ -2549,9 +2601,9 @@ Table_entry* table_get_sym(Table* tbl, char* k) {
 	return NULL;
 }
 
-Error table_set_sym(Table* tbl, char* k, Noun v) {
-	Table_entry* p = table_get_sym(tbl, k);
-	Noun s = {noun_t, .value.symbol = NULL};
+um_Error table_set_sym(um_Table* tbl, char* k, um_Noun v) {
+	um_TableEntry* p = table_get_sym(tbl, k);
+	um_Noun s = {noun_t, .value.symbol = NULL};
 	if (p) {
 		if (!p->v.mut) { return MakeErrorCode(ERROR_NOMUT); }
 		p->v = v;
@@ -2563,31 +2615,38 @@ Error table_set_sym(Table* tbl, char* k, Noun v) {
 	}
 }
 
-Error builtin_type(Vector* v_params, Noun* result) {
+um_Error builtin_type(um_Vector* v_params, um_Noun* result) {
 	if (v_params->size != 1) { return MakeErrorCode(ERROR_ARGS); }
 
 	*result = new_type(v_params->data[0].type);
 	return MakeErrorCode(OK);
 }
 
-Error builtin_getlist(Vector* v_params, Noun* result) {
+um_Error builtin_getlist(um_Vector* v_params, um_Noun* result) {
 	if (v_params->size != 2) { return MakeErrorCode(ERROR_ARGS); }
 	if (v_params->data[0].type != i32_t) {
 		return MakeError(
 		    ERROR_TYPE,
 		    "list_index: first parameter must be integer type");
 	}
-	if (!listp(v_params->data[1])) {
-		return MakeError(ERROR_TYPE,
-				 "list_index: second parameter must be list");
+	if (!listp(v_params->data[1]) && v_params->data[1].type != vector_t) {
+		return MakeError(
+		    ERROR_TYPE,
+		    "list_index: second parameter must be list or vector");
 	}
 
-	*result = *list_index(&v_params->data[1],
-			      v_params->data[0].value.integer_v);
+	if (v_params->data[1].type != vector_t) {
+		*result = v_params->data[1]
+			      .value.vector_v
+			      ->data[v_params->data[0].value.integer];
+	} else {
+		*result = *list_index(&v_params->data[1],
+				      v_params->data[0].value.integer);
+	}
 	return MakeErrorCode(OK);
 }
 
-Error builtin_setlist(Vector* v_params, Noun* result) {
+um_Error builtin_setlist(um_Vector* v_params, um_Noun* result) {
 	if (v_params->size != 3) { return MakeErrorCode(ERROR_ARGS); }
 	if (v_params->data[0].type != i32_t) {
 		return MakeError(
@@ -2599,22 +2658,25 @@ Error builtin_setlist(Vector* v_params, Noun* result) {
 				 "list_index: second parameter must be list");
 	}
 
-	Noun* t
-	    = list_index(&v_params->data[1], v_params->data[0].value.integer_v);
+	um_Noun* t
+	    = list_index(&v_params->data[1], v_params->data[0].value.integer);
 	t->type = v_params->data[2].type;
 	t->value = v_params->data[2].value;
 	*result = *t;
 	return MakeErrorCode(OK);
 }
 
-Error builtin_len(Vector* v_params, Noun* result) {
+um_Error builtin_len(um_Vector* v_params, um_Noun* result) {
 	if (v_params->size != 1) { return MakeErrorCode(ERROR_ARGS); }
 
 	if (listp(v_params->data[0])) {
 		*result = new ((long)list_len(v_params->data[0]));
 	} else if (v_params->data[0].type == string_t) {
-		*result
-		    = new ((long)strlen(v_params->data[0].value.str->value));
+		*result = new (
+		    (long)strlen(v_params->data[0].value.um_String->value));
+	} else if (v_params->data[0].type == vector_t) {
+
+		*result = new ((long)v_params->data[0].value.vector_v->size);
 	} else {
 		*result = new ((long)0);
 		return MakeErrorCode(ERROR_TYPE);
@@ -2623,7 +2685,7 @@ Error builtin_len(Vector* v_params, Noun* result) {
 	return MakeErrorCode(OK);
 }
 
-Error builtin_range(Vector* v_params, Noun* result) {
+um_Error builtin_range(um_Vector* v_params, um_Noun* result) {
 	if (v_params->size > 2 || v_params->size < 1) {
 		return MakeError(ERROR_ARGS,
 				 "range: arg count must be nonzero below 3");
@@ -2634,10 +2696,10 @@ Error builtin_range(Vector* v_params, Noun* result) {
 				 "range: args must be type numeric");
 	}
 
-	long a = cast(v_params->data[0], i32_t).value.integer_v,
-	     b = cast(v_params->data[1], i32_t).value.integer_v;
+	long a = cast(v_params->data[0], i32_t).value.integer,
+	     b = cast(v_params->data[1], i32_t).value.integer;
 
-	Noun range = nil;
+	um_Noun range = nil;
 
 	if (a < b) {
 		for (; a <= b; b--) { range = cons(new (b), range); }
@@ -2649,8 +2711,8 @@ Error builtin_range(Vector* v_params, Noun* result) {
 	return MakeErrorCode(OK);
 }
 
-Error builtin_car(Vector* v_params, Noun* result) {
-	Noun a;
+um_Error builtin_car(um_Vector* v_params, um_Noun* result) {
+	um_Noun a;
 	if (v_params->size != 1) { return MakeErrorCode(ERROR_ARGS); }
 
 	a = v_params->data[0];
@@ -2665,8 +2727,8 @@ Error builtin_car(Vector* v_params, Noun* result) {
 	return MakeErrorCode(OK);
 }
 
-Error builtin_cdr(Vector* v_params, Noun* result) {
-	Noun a;
+um_Error builtin_cdr(um_Vector* v_params, um_Noun* result) {
+	um_Noun a;
 	if (v_params->size != 1) { return MakeErrorCode(ERROR_ARGS); }
 
 	a = v_params->data[0];
@@ -2681,7 +2743,7 @@ Error builtin_cdr(Vector* v_params, Noun* result) {
 	return MakeErrorCode(OK);
 }
 
-Error builtin_cons(Vector* v_params, Noun* result) {
+um_Error builtin_cons(um_Vector* v_params, um_Noun* result) {
 	if (v_params->size != 2) { return MakeErrorCode(ERROR_ARGS); }
 
 	*result = cons(v_params->data[0], v_params->data[1]);
@@ -2689,10 +2751,10 @@ Error builtin_cons(Vector* v_params, Noun* result) {
 	return MakeErrorCode(OK);
 }
 
-Error builtin_apply(Vector* v_params, Noun* result) {
-	Noun fn;
-	Vector v;
-	Error err;
+um_Error builtin_apply(um_Vector* v_params, um_Noun* result) {
+	um_Noun fn;
+	um_Vector v;
+	um_Error err;
 
 	if (v_params->size != 2) { return MakeErrorCode(ERROR_ARGS); }
 
@@ -2703,8 +2765,8 @@ Error builtin_apply(Vector* v_params, Noun* result) {
 	return err;
 }
 
-Error builtin_eq(Vector* v_params, Noun* result) {
-	Noun a, b;
+um_Error builtin_eq(um_Vector* v_params, um_Noun* result) {
+	um_Noun a, b;
 	size_t i;
 	if (v_params->size <= 1) {
 		*result = new ((bool)true);
@@ -2724,8 +2786,8 @@ Error builtin_eq(Vector* v_params, Noun* result) {
 	return MakeErrorCode(OK);
 }
 
-Error builtin_eq_l(Vector* v_params, Noun* result) {
-	Noun a, b;
+um_Error builtin_eq_l(um_Vector* v_params, um_Noun* result) {
+	um_Noun a, b;
 	size_t i;
 	if (v_params->size <= 1) {
 		*result = sym_true;
@@ -2745,14 +2807,14 @@ Error builtin_eq_l(Vector* v_params, Noun* result) {
 	return MakeErrorCode(OK);
 }
 
-Error builtin_pairp(Vector* v_params, Noun* result) {
+um_Error builtin_pairp(um_Vector* v_params, um_Noun* result) {
 	if (v_params->size != 1) { return MakeErrorCode(ERROR_ARGS); }
 
 	*result = v_params->data[0].type == pair_t ? sym_true : nil;
 	return MakeErrorCode(OK);
 }
 
-Error builtin_not(Vector* v_params, Noun* result) {
+um_Error builtin_not(um_Vector* v_params, um_Noun* result) {
 	if (v_params->size != 1) {
 		*result = nil;
 		return MakeErrorCode(ERROR_ARGS);
@@ -2764,8 +2826,8 @@ Error builtin_not(Vector* v_params, Noun* result) {
 	return MakeErrorCode(OK);
 }
 
-Error builtin_exit(Vector* v_params, Noun* result) {
-	Noun code = nil;
+um_Error builtin_exit(um_Vector* v_params, um_Noun* result) {
+	um_Noun code = nil;
 	if (v_params->size != 1) { return MakeErrorCode(ERROR_ARGS); }
 
 	if (isnil(code = cast(v_params->data[0], i32_t))) {
@@ -2774,21 +2836,36 @@ Error builtin_exit(Vector* v_params, Noun* result) {
 
 	*result = code;
 
-	exit(code.value.integer_v);
+	exit(code.value.integer);
 }
 
-Error builtin_macex(Vector* v_params, Noun* result) {
+um_Error builtin_macex(um_Vector* v_params, um_Noun* result) {
 	long alen = v_params->size;
 	if (alen == 1) {
-		Error err = macex(v_params->data[0], result);
+		um_Error err = macex(v_params->data[0], result);
 		return err;
 	} else
 		return MakeErrorCode(ERROR_ARGS);
 	return MakeErrorCode(OK);
 }
 
-Error builtin_string(Vector* v_params, Noun* result) {
-	char* s = str_new();
+um_Error builtin_vector(um_Vector* v_params, um_Noun* result) {
+	um_Vector v;
+	size_t i;
+
+	vector_new(&v);
+	for (i = 0; i < v_params->size; i++) {
+		if (!isnil(v_params->data[i])) {
+			vector_add(&v, v_params->data[i]);
+		}
+	}
+
+	*result = new_vector(&v);
+	return MakeErrorCode(OK);
+}
+
+um_Error builtin_string(um_Vector* v_params, um_Noun* result) {
+	char* s = um_new_string();
 	size_t i;
 	for (i = 0; i < v_params->size; i++) {
 		if (!isnil(v_params->data[i])) {
@@ -2802,7 +2879,7 @@ Error builtin_string(Vector* v_params, Noun* result) {
 	return MakeErrorCode(OK);
 }
 
-Error builtin_print(Vector* v_params, Noun* result) {
+um_Error builtin_print(um_Vector* v_params, um_Noun* result) {
 	size_t i;
 	for (i = 0; i < v_params->size; i++) {
 		if (!isnil(v_params->data[i])) {
@@ -2814,14 +2891,14 @@ Error builtin_print(Vector* v_params, Noun* result) {
 	return MakeErrorCode(OK);
 }
 
-Error builtin_eval(Vector* v_params, Noun* result) {
+um_Error builtin_eval(um_Vector* v_params, um_Noun* result) {
 	if (v_params->size == 1)
 		return macex_eval(v_params->data[0], result);
 	else
 		return MakeErrorCode(ERROR_ARGS);
 }
 
-Error builtin_int(Vector* v_params, Noun* result) {
+um_Error builtin_int(um_Vector* v_params, um_Noun* result) {
 	if (v_params->size == 1) {
 		*result = cast(v_params->data[0], i32_t);
 
@@ -2831,7 +2908,7 @@ Error builtin_int(Vector* v_params, Noun* result) {
 	}
 }
 
-Error builtin_cast(Vector* v_params, Noun* result) {
+um_Error builtin_cast(um_Vector* v_params, um_Noun* result) {
 	if (v_params->size == 2) {
 
 		*result = cast(v_params->data[0],
@@ -2846,7 +2923,7 @@ Error builtin_cast(Vector* v_params, Noun* result) {
 	}
 }
 
-Error builtin_float(Vector* v_params, Noun* result) {
+um_Error builtin_float(um_Vector* v_params, um_Noun* result) {
 	if (v_params->size == 1) {
 		*result = cast(v_params->data[0], f64_t);
 
@@ -2856,7 +2933,7 @@ Error builtin_float(Vector* v_params, Noun* result) {
 	}
 }
 
-Error builtin_and(Vector* v_params, Noun* result) {
+um_Error builtin_and(um_Vector* v_params, um_Noun* result) {
 	if (v_params->size != 2) { return MakeErrorCode(ERROR_ARGS); }
 
 	*result = new ((bool)(cast(v_params->data[0], bool_t).value.bool_v
@@ -2865,71 +2942,71 @@ Error builtin_and(Vector* v_params, Noun* result) {
 	return MakeErrorCode(OK);
 }
 
-Error builtin_sin(Vector* v_params, Noun* result) {
+um_Error builtin_sin(um_Vector* v_params, um_Noun* result) {
 	if (v_params->size == 1) {
 		*result = new_number(
-		    sin(cast(v_params->data[0], f64_t).value.number_v));
+		    sin(cast(v_params->data[0], f64_t).value.number));
 		return MakeErrorCode(OK);
 	} else {
 		return MakeErrorCode(ERROR_ARGS);
 	}
 }
 
-Error builtin_asin(Vector* v_params, Noun* result) {
+um_Error builtin_asin(um_Vector* v_params, um_Noun* result) {
 	if (v_params->size == 1) {
 		*result = new_number(
-		    asin(cast(v_params->data[0], f64_t).value.number_v));
+		    asin(cast(v_params->data[0], f64_t).value.number));
 		return MakeErrorCode(OK);
 	} else {
 		return MakeErrorCode(ERROR_ARGS);
 	}
 }
 
-Error builtin_cos(Vector* v_params, Noun* result) {
+um_Error builtin_cos(um_Vector* v_params, um_Noun* result) {
 	if (v_params->size == 1) {
 		*result = new_number(
-		    cos(cast(v_params->data[0], f64_t).value.number_v));
+		    cos(cast(v_params->data[0], f64_t).value.number));
 		return MakeErrorCode(OK);
 	} else {
 		return MakeErrorCode(ERROR_ARGS);
 	}
 }
 
-Error builtin_acos(Vector* v_params, Noun* result) {
+um_Error builtin_acos(um_Vector* v_params, um_Noun* result) {
 	if (v_params->size == 1) {
 		*result = new_number(
-		    acos(cast(v_params->data[0], f64_t).value.number_v));
+		    acos(cast(v_params->data[0], f64_t).value.number));
 		return MakeErrorCode(OK);
 	} else {
 		return MakeErrorCode(ERROR_ARGS);
 	}
 }
 
-Error builtin_tan(Vector* v_params, Noun* result) {
+um_Error builtin_tan(um_Vector* v_params, um_Noun* result) {
 	if (v_params->size == 1) {
 		*result = new_number(
-		    tan(cast(v_params->data[0], f64_t).value.number_v));
+		    tan(cast(v_params->data[0], f64_t).value.number));
 		return MakeErrorCode(OK);
 	} else {
 		return MakeErrorCode(ERROR_ARGS);
 	}
 }
 
-Error builtin_atan(Vector* v_params, Noun* result) {
+um_Error builtin_atan(um_Vector* v_params, um_Noun* result) {
 	if (v_params->size == 1) {
 		*result = new_number(
-		    atan(cast(v_params->data[0], f64_t).value.number_v));
+		    atan(cast(v_params->data[0], f64_t).value.number));
 		return MakeErrorCode(OK);
 	} else {
 		return MakeErrorCode(ERROR_ARGS);
 	}
 }
 
-Error builtin_pow(Vector* v_params, Noun* result) {
+um_Error builtin_pow(um_Vector* v_params, um_Noun* result) {
 	if (v_params->size != 2) { return MakeErrorCode(ERROR_ARGS); }
 
-	double temp = pow(cast(v_params->data[0], f64_t).value.number_v,
-			  cast(v_params->data[1], f64_t).value.number_v);
+	double temp = pow(cast(v_params->data[0], f64_t).value.number,
+			  cast(v_params->data[1], f64_t).value.number);
 
 	*result = isnormal(temp) && (temp == floor(temp))
 		    ? new_integer((long)temp)
@@ -2938,10 +3015,10 @@ Error builtin_pow(Vector* v_params, Noun* result) {
 	return MakeErrorCode(OK);
 }
 
-Error builtin_cbrt(Vector* v_params, Noun* result) {
+um_Error builtin_cbrt(um_Vector* v_params, um_Noun* result) {
 	if (v_params->size != 1) { return MakeErrorCode(ERROR_ARGS); }
 
-	double temp = cbrt(cast(v_params->data[0], f64_t).value.number_v);
+	double temp = cbrt(cast(v_params->data[0], f64_t).value.number);
 
 	*result = isnormal(temp) && (temp == floor(temp))
 		    ? new_integer((long)temp)
@@ -2952,12 +3029,12 @@ Error builtin_cbrt(Vector* v_params, Noun* result) {
 
 #define intp(d) (bool)(isnormal(d) && (d == floor(d)))
 
-Error builtin_add(Vector* v_params, Noun* result) {
+um_Error builtin_add(um_Vector* v_params, um_Noun* result) {
 	size_t ac = v_params->size;
-	Noun a0 = v_params->data[0], a1 = v_params->data[1];
+	um_Noun a0 = v_params->data[0], a1 = v_params->data[1];
 	if (ac == 1) {
-		*result = a0.type == i32_t ? new (labs(a0.value.integer_v))
-			: a0.type == f64_t ? new (fabs(a0.value.number_v))
+		*result = a0.type == i32_t ? new (labs(a0.value.integer))
+			: a0.type == f64_t ? new (fabs(a0.value.number))
 					   : new ((long)0);
 		return MakeErrorCode(OK);
 	} else if (ac > 2 || ac < 1) {
@@ -2965,10 +3042,10 @@ Error builtin_add(Vector* v_params, Noun* result) {
 	}
 
 	if (a0.type == i32_t && a1.type == i32_t) {
-		*result = new (a0.value.integer_v + a1.value.integer_v);
+		*result = new (a0.value.integer + a1.value.integer);
 	} else {
-		double _temp = cast(a0, f64_t).value.number_v
-			     + cast(a1, f64_t).value.number_v;
+		double _temp = cast(a0, f64_t).value.number
+			     + cast(a1, f64_t).value.number;
 
 		*result = intp(_temp) ? new ((long)_temp) : new (_temp);
 	}
@@ -2976,12 +3053,12 @@ Error builtin_add(Vector* v_params, Noun* result) {
 	return MakeErrorCode(OK);
 }
 
-Error builtin_subtract(Vector* v_params, Noun* result) {
+um_Error builtin_subtract(um_Vector* v_params, um_Noun* result) {
 	size_t ac = v_params->size;
-	Noun a0 = v_params->data[0], a1 = v_params->data[1];
+	um_Noun a0 = v_params->data[0], a1 = v_params->data[1];
 	if (ac == 1) {
-		*result = a0.type == i32_t ? new (-labs(a0.value.integer_v))
-			: a0.type == f64_t ? new (-fabs(a0.value.number_v))
+		*result = a0.type == i32_t ? new (-labs(a0.value.integer))
+			: a0.type == f64_t ? new (-fabs(a0.value.number))
 					   : new ((long)0);
 		return MakeErrorCode(OK);
 	} else if (ac > 2 || ac < 1) {
@@ -2989,10 +3066,10 @@ Error builtin_subtract(Vector* v_params, Noun* result) {
 	}
 
 	if (a0.type == i32_t && a1.type == i32_t) {
-		*result = new (a0.value.integer_v - a1.value.integer_v);
+		*result = new (a0.value.integer - a1.value.integer);
 	} else {
-		double _temp = cast(a0, f64_t).value.number_v
-			     - cast(a1, f64_t).value.number_v;
+		double _temp = cast(a0, f64_t).value.number
+			     - cast(a1, f64_t).value.number;
 
 		*result = intp(_temp) ? new ((long)_temp) : new (_temp);
 	}
@@ -3000,15 +3077,15 @@ Error builtin_subtract(Vector* v_params, Noun* result) {
 	return MakeErrorCode(OK);
 }
 
-Error builtin_modulo(Vector* v_params, Noun* result) {
-	Noun a0 = v_params->data[0], a1 = v_params->data[1];
+um_Error builtin_modulo(um_Vector* v_params, um_Noun* result) {
+	um_Noun a0 = v_params->data[0], a1 = v_params->data[1];
 	if (v_params->size != 2) { return MakeErrorCode(ERROR_ARGS); }
 
 	if (a0.type == i32_t && a1.type == i32_t) {
-		*result = new (a0.value.integer_v % a1.value.integer_v);
+		*result = new (a0.value.integer % a1.value.integer);
 	} else {
-		long _temp = cast(a0, i32_t).value.integer_v
-			   % cast(a1, i32_t).value.integer_v;
+		long _temp = cast(a0, i32_t).value.integer
+			   % cast(a1, i32_t).value.integer;
 
 		*result = new (_temp);
 	}
@@ -3016,15 +3093,15 @@ Error builtin_modulo(Vector* v_params, Noun* result) {
 	return MakeErrorCode(OK);
 }
 
-Error builtin_multiply(Vector* v_params, Noun* result) {
-	Noun a0 = v_params->data[0], a1 = v_params->data[1];
+um_Error builtin_multiply(um_Vector* v_params, um_Noun* result) {
+	um_Noun a0 = v_params->data[0], a1 = v_params->data[1];
 	if (v_params->size != 2) { return MakeErrorCode(ERROR_ARGS); }
 
 	if (a0.type == i32_t && a1.type == i32_t) {
-		*result = new (a0.value.integer_v * a1.value.integer_v);
+		*result = new (a0.value.integer * a1.value.integer);
 	} else {
-		double _temp = cast(a0, f64_t).value.number_v
-			     * cast(a1, f64_t).value.number_v;
+		double _temp = cast(a0, f64_t).value.number
+			     * cast(a1, f64_t).value.number;
 
 		*result = intp(_temp) ? new ((long)_temp) : new (_temp);
 	}
@@ -3032,15 +3109,15 @@ Error builtin_multiply(Vector* v_params, Noun* result) {
 	return MakeErrorCode(OK);
 }
 
-Error builtin_divide(Vector* v_params, Noun* result) {
-	Noun a0 = v_params->data[0], a1 = v_params->data[1];
+um_Error builtin_divide(um_Vector* v_params, um_Noun* result) {
+	um_Noun a0 = v_params->data[0], a1 = v_params->data[1];
 	if (v_params->size != 2) { return MakeErrorCode(ERROR_ARGS); }
 
 	if (a0.type == i32_t && a1.type == i32_t) {
-		*result = new (a0.value.integer_v / a1.value.integer_v);
+		*result = new (a0.value.integer / a1.value.integer);
 	} else {
-		double _temp = cast(a0, f64_t).value.number_v
-			     / cast(a1, f64_t).value.number_v;
+		double _temp = cast(a0, f64_t).value.number
+			     / cast(a1, f64_t).value.number;
 
 		*result = intp(_temp) ? new ((long)_temp) : new (_temp);
 	}
@@ -3048,29 +3125,29 @@ Error builtin_divide(Vector* v_params, Noun* result) {
 	return MakeErrorCode(OK);
 }
 
-Error builtin_less(Vector* v_params, Noun* result) {
-	Noun a0 = v_params->data[0], a1 = v_params->data[1];
+um_Error builtin_less(um_Vector* v_params, um_Noun* result) {
+	um_Noun a0 = v_params->data[0], a1 = v_params->data[1];
 	if (v_params->size != 2) { return MakeErrorCode(ERROR_ARGS); }
 
 	if (a0.type == i32_t && a1.type == i32_t) {
-		*result = new ((bool)(a0.value.integer_v < a1.value.integer_v));
+		*result = new ((bool)(a0.value.integer < a1.value.integer));
 	} else {
-		*result = new ((bool)(cast(a0, f64_t).value.number_v
-				      < cast(a1, f64_t).value.number_v));
+		*result = new ((bool)(cast(a0, f64_t).value.number
+				      < cast(a1, f64_t).value.number));
 	}
 
 	return MakeErrorCode(OK);
 }
 
-Error builtin_greater(Vector* v_params, Noun* result) {
-	Noun a0 = v_params->data[0], a1 = v_params->data[1];
+um_Error builtin_greater(um_Vector* v_params, um_Noun* result) {
+	um_Noun a0 = v_params->data[0], a1 = v_params->data[1];
 	if (v_params->size != 2) { return MakeErrorCode(ERROR_ARGS); }
 
 	if (a0.type == i32_t && a1.type == i32_t) {
-		*result = new ((bool)(a0.value.integer_v > a1.value.integer_v));
+		*result = new ((bool)(a0.value.integer > a1.value.integer));
 	} else {
-		*result = new ((bool)(cast(a0, f64_t).value.number_v
-				      > cast(a1, f64_t).value.number_v));
+		*result = new ((bool)(cast(a0, f64_t).value.number
+				      > cast(a1, f64_t).value.number));
 	}
 
 	return MakeErrorCode(OK);
