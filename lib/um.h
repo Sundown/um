@@ -707,7 +707,7 @@ um_Result um_interpret_string(const char* text) {
 	return (um_Result){.error = err, .data = result};
 }
 
-um_Error lex(const char* um_String, const char** start, const char** end) {
+um_Error um_lex(const char* um_String, const char** start, const char** end) {
 start:
 	um_String += strspn(um_String, " \t\r\n");
 
@@ -897,7 +897,7 @@ um_Error read_list(const char* start, const char** end, um_Noun* result) {
 		um_Noun item;
 		um_Error err;
 
-		err = lex(*end, &token, end);
+		err = um_lex(*end, &token, end);
 		if (err._) { return err; }
 
 		if (token[0] == ')') { return MakeErrorCode(OK); }
@@ -912,7 +912,7 @@ um_Error read_list(const char* start, const char** end, um_Noun* result) {
 
 			cdr(p) = item;
 
-			err = lex(*end, &token, end);
+			err = um_lex(*end, &token, end);
 			if (!err._ && token[0] != ')') {
 				err = MakeErrorCode(ERROR_SYNTAX);
 			}
@@ -941,7 +941,7 @@ um_Error read_prefix(const char* start, const char** end, um_Noun* result) {
 	while (1) {
 		const char* token;
 		um_Noun item;
-		um_Error err = lex(*end, &token, end);
+		um_Error err = um_lex(*end, &token, end);
 
 		if (err._) { return err; }
 
@@ -967,7 +967,7 @@ um_Error read_block(const char* start, const char** end, um_Noun* result) {
 	while (1) {
 		const char* token;
 		um_Noun item;
-		um_Error err = lex(*end, &token, end);
+		um_Error err = um_lex(*end, &token, end);
 
 		if (err._) { return err; }
 
@@ -993,7 +993,7 @@ um_Error read_vector(const char* start, const char** end, um_Noun* result) {
 	while (1) {
 		const char* token;
 		um_Noun item;
-		um_Error err = lex(*end, &token, end);
+		um_Error err = um_lex(*end, &token, end);
 
 		if (err._) { return err; }
 
@@ -1014,7 +1014,7 @@ um_Error read_expr(const char* input, const char** end, um_Noun* result) {
 	char* token;
 	um_Error err;
 
-	err = lex(input, (const char**)&token, end);
+	err = um_lex(input, (const char**)&token, end);
 	if (err._) { return err; }
 
 	if (token[0] == '(') {
