@@ -39,8 +39,7 @@ typedef enum {
 	nil_t,
 	pair_t,
 	noun_t,
-	f64_t,
-	i32_t,
+	number_t,
 	builtin_t,
 	closure_t,
 	macro_t,
@@ -95,7 +94,6 @@ struct um_Noun {
 		bool bool_v;
 		um_Error error_v;
 		double number;
-		long integer;
 		struct um_Pair* pair;
 		char* symbol;
 		struct um_String* um_String;
@@ -156,12 +154,12 @@ static const um_Noun nil
 
 um_Noun sym_quote, sym_const, sym_quasiquote, sym_unquote, sym_unquote_splicing,
     sym_def, sym_set, sym_defun, sym_fn, sym_if, sym_cond, sym_switch,
-    sym_match, sym_mac, sym_apply, sym_cons, sym_string, sym_num, sym_int,
-    sym_char, sym_do, sym_true, sym_false,
+    sym_match, sym_mac, sym_apply, sym_cons, sym_string, sym_num, sym_char,
+    sym_do, sym_true, sym_false,
 
-    sym_nil_t, sym_pair_t, sym_noun_t, sym_f64_t, sym_i32_t, sym_builtin_t,
-    sym_closure_t, sym_macro_t, sym_string_t, sym_vector_t, sym_input_t,
-    sym_output_t, sym_error_t, sym_type_t, sym_bool_t;
+    sym_nil_t, sym_pair_t, sym_noun_t, sym_f64_t, sym_builtin_t, sym_closure_t,
+    sym_macro_t, sym_string_t, sym_vector_t, sym_input_t, sym_output_t,
+    sym_error_t, sym_type_t, sym_bool_t;
 
 um_Noun env;
 static size_t stack_capacity = 0;
@@ -178,16 +176,13 @@ size_t um_global_symbol_capacity;
 um_Noun cur_expr;
 
 /* clang-format off */
-#define car(p)	    ((p).value.pair->car)
-#define cdr(p)	    ((p).value.pair->cdr)
-#define cdr2(p)	    (cdr(p))
-#define pop(n)	    (n = cdr2(n))
-#define isnil(um_Noun) ((um_Noun).type == nil_t)
-#define isnumber(a) (a.type == f64_t || a.type == i32_t)
-#define getnumber(a)                           \
-	(a.type == f64_t   ? a.value.number  \
-	 : a.type == i32_t ? a.value.integer \
-			   : 0)
+#define car(p)	    	((p).value.pair->car)
+#define cdr(p)	    	((p).value.pair->cdr)
+#define cdr2(p)	    	(cdr(p))
+#define pop(n)	    	(n = cdr2(n))
+#define isnil(n)	((n).type == nil_t)
+#define isnumber(a) 	(a.type == number_t)
+#define getnumber(a) 	(a.type == number_t ? a.value.number : 0)
 #define ingest(s)                                                         \
 	do {                                                              \
 		um_Result __tmperr = um_interpret_string(s);                 \
@@ -197,15 +192,13 @@ um_Noun cur_expr;
 #define MakeError(c, m)  (um_Error){c, m}
 #define new(T) _Generic((T),  	\
 	bool: new_bool,      	\
-	long: new_integer,   	\
 	char*: new_string,   	\
 	double: new_number,  	\
 	um_Builtin: new_builtin,	\
 	um_NounType: new_type  	\
 )(T)
 
-inline um_Noun new_number(double x) { return (um_Noun){f64_t, true, {.number = x}}; }
-inline um_Noun new_integer(long x) { return (um_Noun){i32_t, true, {.integer = x}}; }
+inline um_Noun new_number(double x) { return (um_Noun){number_t, true, {.number = x}}; }
 inline um_Noun new_builtin(um_Builtin fn) { return (um_Noun){builtin_t, true, {.builtin = fn}}; }
 inline um_Noun new_type(um_NounType t) { return (um_Noun){type_t, true, {.type_v = t}}; }
 inline um_Noun new_bool(bool b) { return (um_Noun){bool_t, true, {.bool_v = b}}; }
@@ -441,8 +434,7 @@ um_Noun cast(um_Noun a, um_NounType t) {
 
 	switch (a.type) {
 		case nil_t: return nil_to_t(nil, t);
-		case i32_t: return integer_to_t(a.value.integer, t);
-		case f64_t: return number_to_t(a.value.number, t);
+		case number_t: return number_to_t(a.value.number, t);
 		case noun_t: return noun_to_t(a.value.symbol, t);
 		case string_t: return string_to_t(a.value.um_String->value, t);
 		case bool_t: return bool_to_t(a.value.bool_v, t);
@@ -460,8 +452,7 @@ char* type_to_string(um_NounType a) {
 		case pair_t: return "Pair";
 		case string_t: return "String";
 		case noun_t: return "um_Noun";
-		case f64_t: return "Float";
-		case i32_t: return "Int";
+		case number_t: return "Float";
 		case builtin_t: return "Builtin";
 		case closure_t: return "Closure";
 		case macro_t: return "Macro";
@@ -489,8 +480,7 @@ char* error_to_string(um_Error e) {
 um_Noun nil_to_t(um_Noun x __attribute__((unused)), um_NounType t) {
 	switch (t) {
 		case nil_t: return nil;
-		case i32_t: return new_integer(0);
-		case f64_t: return new_number(NAN);
+		case number_t: return new_number(NAN);
 		case pair_t: return cons(nil, nil);
 		case bool_t: return new_bool(false);
 		case type_t: return new_type(nil_t);
@@ -500,30 +490,8 @@ um_Noun nil_to_t(um_Noun x __attribute__((unused)), um_NounType t) {
 	}
 }
 
-um_Noun integer_to_t(long x, um_NounType t) {
-	if (t == i32_t) { return new_integer(x); }
-
-	char* buf = NULL;
-	if (t == noun_t || t == string_t) {
-		buf = calloc(21, sizeof(char));
-		snprintf(buf, 21, "%ld", x);
-		buf = realloc(buf, strlen(buf) * sizeof(char) + 1);
-	}
-
-	switch (t) {
-		case nil_t: return nil;
-		case f64_t: return new_number((double)x);
-		case noun_t: return intern(buf);
-		case bool_t: return new_bool(x > 0);
-		case pair_t: return cons(new_integer(x), nil);
-		case string_t: return new_string(buf);
-		case type_t: return new_type(i32_t);
-		default: return nil;
-	}
-}
-
 um_Noun number_to_t(double x, um_NounType t) {
-	if (t == f64_t) { return new_number(x); }
+	if (t == number_t) { return new_number(x); }
 
 	char* buf = NULL;
 	if (t == noun_t || t == string_t) {
@@ -534,12 +502,11 @@ um_Noun number_to_t(double x, um_NounType t) {
 
 	switch (t) {
 		case nil_t: return nil;
-		case i32_t: return new_integer((long)x);
 		case noun_t: return intern(buf);
 		case bool_t: return new_bool(x > 0 && isnormal(x) && !isnan(x));
 		case pair_t: return cons(new_number(x), nil);
 		case string_t: return new_string(buf);
-		case type_t: return new_type(f64_t);
+		case type_t: return new_type(number_t);
 		default: return nil;
 	}
 }
@@ -548,8 +515,7 @@ um_Noun noun_to_t(char* x, um_NounType t) {
 	switch (t) {
 		case pair_t: return cons(intern(x), nil);
 		case noun_t: return intern(x);
-		case i32_t: return new_integer(atol(x));
-		case f64_t: return new_number(strtod(x, NULL));
+		case number_t: return new_number(strtod(x, NULL));
 		case string_t: return new_string(x);
 		case type_t: return new_type(noun_t);
 		case bool_t:
@@ -563,8 +529,7 @@ um_Noun string_to_t(char* x, um_NounType t) {
 	switch (t) {
 		case pair_t: return cons(intern(x), nil);
 		case noun_t: return intern(x);
-		case i32_t: return new_integer(atol(x));
-		case f64_t: return new_number(strtod(x, NULL));
+		case number_t: return new_number(strtod(x, NULL));
 		case string_t: return new_string(x);
 		case type_t: return new_type(noun_t);
 		case bool_t:
@@ -578,8 +543,7 @@ um_Noun bool_to_t(bool x, um_NounType t) {
 	switch (t) {
 		case bool_t: return new_bool(x);
 		case pair_t: return cons(new_bool(x), nil);
-		case f64_t: return new_number((double)x);
-		case i32_t: return new_integer((long)x);
+		case number_t: return new_number((double)x);
 		case noun_t: return x ? intern("true") : intern("false");
 		case string_t:
 			return x ? new_string("true") : new_string("false");
@@ -751,17 +715,9 @@ um_Error parse_simple(const char* start, const char* end, um_Noun* result) {
 	const char* ps;
 
 	double val = strtod(start, &p);
-	bool haspoint = strstr(start, ".") != NULL;
 	if (p == end) {
-		if (!haspoint
-		    && ((isnormal(val) && val == floor(val)) || val == 0)) {
-			result->type = i32_t;
-			result->value.integer = val;
-		} else {
-			result->type = f64_t;
-			result->value.number = val;
-		}
-
+		result->type = number_t;
+		result->value.number = val;
 		return MakeErrorCode(OK);
 	} else if (start[0] == '"') {
 		result->type = string_t;
@@ -872,8 +828,8 @@ um_Error parse_simple(const char* start, const char* end, um_Noun* result) {
 
 				*result
 				    = cons(intern("range"),
-					   cons(cast(a1, i32_t),
-						cons(cast(a2, i32_t), nil)));
+					   cons(cast(a1, number_t),
+						cons(cast(a2, number_t), nil)));
 
 				return MakeErrorCode(OK);
 			}
@@ -1037,12 +993,6 @@ um_Error read_expr(const char* input, const char** end, um_Noun* result) {
 		 e0 = eval_expr(n0, env, &n1);
 		 if (e0._) { return e0; }
 		 switch (n1.type) {
-			 case i32_t: {
-				 *result = cons(intern("getlist"),
-						cons(n1, cons(nil, nil)));
-				 return read_expr(
-				     *end, end, &car(cdr(cdr(*result))));
-			 }
 			 case type_t: {
 				 *result = cons(intern("cast"),
 						cons(nil, cons(n1, nil)));
@@ -1111,11 +1061,11 @@ um_Error apply(um_Noun fn, um_Vector* v_params, um_Noun* result) {
 	} else if (fn.type == pair_t && listp(fn)) {
 		if (v_params->size != 1) { return MakeErrorCode(ERROR_ARGS); }
 
-		if (v_params->data[0].type != i32_t) {
+		if (v_params->data[0].type != number_t) {
 			return MakeErrorCode(ERROR_TYPE);
 		}
 
-		index = (size_t)(v_params->data[0]).value.integer;
+		index = (size_t)(v_params->data[0]).value.number;
 		a = fn;
 
 		for (i = 0; i < index; i++) {
@@ -2003,11 +1953,7 @@ char* to_string(um_Noun a, bool write) {
 			append_string(&s, a.value.um_String->value);
 			if (write) append_string(&s, "\"");
 			break;
-		case i32_t:
-			sprintf(buf, "%ld", a.value.integer);
-			append_string(&s, buf);
-			break;
-		case f64_t:
+		case number_t:
 			sprintf(buf, "%.16g", a.value.number);
 			append_string(&s, buf);
 			break;
@@ -2103,7 +2049,6 @@ DECLARE_BUILTIN(exit);
 DECLARE_BUILTIN(macex);
 DECLARE_BUILTIN(string);
 DECLARE_BUILTIN(eval);
-DECLARE_BUILTIN(int);
 DECLARE_BUILTIN(print);
 DECLARE_BUILTIN(add);
 DECLARE_BUILTIN(subtract);
@@ -2161,7 +2106,6 @@ void um_init() {
 	sym_string = intern("str");
 	sym_string = intern("vec");
 	sym_num = intern("num");
-	sym_int = intern("int");
 	sym_char = intern("char");
 	sym_do = intern("do");
 	sym_set = intern("set");
@@ -2172,7 +2116,6 @@ void um_init() {
 	sym_pair_t = intern("@Pair");
 	sym_noun_t = intern("@Noun");
 	sym_f64_t = intern("@Float");
-	sym_i32_t = intern("@Int");
 	sym_builtin_t = intern("@Builtin");
 	sym_closure_t = intern("@Closure");
 
@@ -2195,8 +2138,7 @@ void um_init() {
 	env_assign(env, sym_nil_t.value.symbol, new ((um_NounType)nil_t));
 	env_assign(env, sym_pair_t.value.symbol, new ((um_NounType)pair_t));
 	env_assign(env, sym_noun_t.value.symbol, new ((um_NounType)noun_t));
-	env_assign(env, sym_f64_t.value.symbol, new ((um_NounType)f64_t));
-	env_assign(env, sym_i32_t.value.symbol, new ((um_NounType)i32_t));
+	env_assign(env, sym_f64_t.value.symbol, new ((um_NounType)number_t));
 	env_assign(
 	    env, sym_builtin_t.value.symbol, new ((um_NounType)builtin_t));
 	env_assign(
@@ -2228,7 +2170,6 @@ void um_init() {
 
 	ASSIGN_BUILTIN("__builtin_pow", builtin_pow);
 	ASSIGN_BUILTIN("__builtin_cbrt", builtin_cbrt);
-	ASSIGN_BUILTIN("int", builtin_int);
 	ASSIGN_BUILTIN("not", builtin_not);
 	ASSIGN_BUILTIN("sin", builtin_sin);
 	ASSIGN_BUILTIN("__builtin_cos", builtin_cos);
@@ -2458,8 +2399,7 @@ bool eq_h(um_Noun a, um_Noun b) {
 
 	switch (a.type) {
 		case nil_t: return isnil(a) && isnil(b);
-		case i32_t: return a.value.integer == b.value.integer;
-		case f64_t: return a.value.number == b.value.number;
+		case number_t: return a.value.number == b.value.number;
 		/* Equal symbols share memory */
 		case noun_t: return a.value.symbol == b.value.symbol;
 		case string_t:
@@ -2514,7 +2454,7 @@ size_t hash_code(um_Noun a) {
 
 			return r;
 		}
-		case f64_t:
+		case number_t:
 			return (size_t)((void*)a.value.symbol)
 			     + (size_t)a.value.number;
 		case builtin_t: return (size_t)a.value.builtin;
@@ -2624,10 +2564,10 @@ um_Error builtin_type(um_Vector* v_params, um_Noun* result) {
 
 um_Error builtin_getlist(um_Vector* v_params, um_Noun* result) {
 	if (v_params->size != 2) { return MakeErrorCode(ERROR_ARGS); }
-	if (v_params->data[0].type != i32_t) {
+	if (v_params->data[0].type != number_t) {
 		return MakeError(
 		    ERROR_TYPE,
-		    "list_index: first parameter must be integer type");
+		    "list_index: first parameter must be number type");
 	}
 	if (!listp(v_params->data[1]) && v_params->data[1].type != vector_t) {
 		return MakeError(
@@ -2638,28 +2578,28 @@ um_Error builtin_getlist(um_Vector* v_params, um_Noun* result) {
 	if (v_params->data[1].type != vector_t) {
 		*result = v_params->data[1]
 			      .value.vector_v
-			      ->data[v_params->data[0].value.integer];
+			      ->data[(size_t)v_params->data[0].value.number];
 	} else {
 		*result = *list_index(&v_params->data[1],
-				      v_params->data[0].value.integer);
+				      (size_t)v_params->data[0].value.number);
 	}
 	return MakeErrorCode(OK);
 }
 
 um_Error builtin_setlist(um_Vector* v_params, um_Noun* result) {
 	if (v_params->size != 3) { return MakeErrorCode(ERROR_ARGS); }
-	if (v_params->data[0].type != i32_t) {
+	if (v_params->data[0].type != number_t) {
 		return MakeError(
 		    ERROR_TYPE,
-		    "list_index: first parameter must be integer type");
+		    "list_index: first parameter must be number type");
 	}
 	if (!listp(v_params->data[1])) {
 		return MakeError(ERROR_TYPE,
 				 "list_index: second parameter must be list");
 	}
 
-	um_Noun* t
-	    = list_index(&v_params->data[1], v_params->data[0].value.integer);
+	um_Noun* t = list_index(&v_params->data[1],
+				(size_t)v_params->data[0].value.number);
 	t->type = v_params->data[2].type;
 	t->value = v_params->data[2].value;
 	*result = *t;
@@ -2670,15 +2610,15 @@ um_Error builtin_len(um_Vector* v_params, um_Noun* result) {
 	if (v_params->size != 1) { return MakeErrorCode(ERROR_ARGS); }
 
 	if (listp(v_params->data[0])) {
-		*result = new ((long)list_len(v_params->data[0]));
+		*result = new ((double)list_len(v_params->data[0]));
 	} else if (v_params->data[0].type == string_t) {
 		*result = new (
-		    (long)strlen(v_params->data[0].value.um_String->value));
+		    (double)strlen(v_params->data[0].value.um_String->value));
 	} else if (v_params->data[0].type == vector_t) {
 
-		*result = new ((long)v_params->data[0].value.vector_v->size);
+		*result = new ((double)v_params->data[0].value.vector_v->size);
 	} else {
-		*result = new ((long)0);
+		*result = new ((double)0);
 		return MakeErrorCode(ERROR_TYPE);
 	}
 
@@ -2696,8 +2636,8 @@ um_Error builtin_range(um_Vector* v_params, um_Noun* result) {
 				 "range: args must be type numeric");
 	}
 
-	long a = cast(v_params->data[0], i32_t).value.integer,
-	     b = cast(v_params->data[1], i32_t).value.integer;
+	double a = cast(v_params->data[0], number_t).value.number,
+	       b = cast(v_params->data[1], number_t).value.number;
 
 	um_Noun range = nil;
 
@@ -2830,13 +2770,13 @@ um_Error builtin_exit(um_Vector* v_params, um_Noun* result) {
 	um_Noun code = nil;
 	if (v_params->size != 1) { return MakeErrorCode(ERROR_ARGS); }
 
-	if (isnil(code = cast(v_params->data[0], i32_t))) {
+	if (isnil(code = cast(v_params->data[0], number_t))) {
 		return MakeErrorCode(ERROR_TYPE);
 	}
 
 	*result = code;
 
-	exit(code.value.integer);
+	exit(code.value.number);
 }
 
 um_Error builtin_macex(um_Vector* v_params, um_Noun* result) {
@@ -2898,16 +2838,6 @@ um_Error builtin_eval(um_Vector* v_params, um_Noun* result) {
 		return MakeErrorCode(ERROR_ARGS);
 }
 
-um_Error builtin_int(um_Vector* v_params, um_Noun* result) {
-	if (v_params->size == 1) {
-		*result = cast(v_params->data[0], i32_t);
-
-		return MakeErrorCode(OK);
-	} else {
-		return MakeErrorCode(ERROR_ARGS);
-	}
-}
-
 um_Error builtin_cast(um_Vector* v_params, um_Noun* result) {
 	if (v_params->size == 2) {
 
@@ -2925,7 +2855,7 @@ um_Error builtin_cast(um_Vector* v_params, um_Noun* result) {
 
 um_Error builtin_float(um_Vector* v_params, um_Noun* result) {
 	if (v_params->size == 1) {
-		*result = cast(v_params->data[0], f64_t);
+		*result = cast(v_params->data[0], number_t);
 
 		return MakeErrorCode(OK);
 	} else {
@@ -2945,7 +2875,7 @@ um_Error builtin_and(um_Vector* v_params, um_Noun* result) {
 um_Error builtin_sin(um_Vector* v_params, um_Noun* result) {
 	if (v_params->size == 1) {
 		*result = new_number(
-		    sin(cast(v_params->data[0], f64_t).value.number));
+		    sin(cast(v_params->data[0], number_t).value.number));
 		return MakeErrorCode(OK);
 	} else {
 		return MakeErrorCode(ERROR_ARGS);
@@ -2955,7 +2885,7 @@ um_Error builtin_sin(um_Vector* v_params, um_Noun* result) {
 um_Error builtin_asin(um_Vector* v_params, um_Noun* result) {
 	if (v_params->size == 1) {
 		*result = new_number(
-		    asin(cast(v_params->data[0], f64_t).value.number));
+		    asin(cast(v_params->data[0], number_t).value.number));
 		return MakeErrorCode(OK);
 	} else {
 		return MakeErrorCode(ERROR_ARGS);
@@ -2965,7 +2895,7 @@ um_Error builtin_asin(um_Vector* v_params, um_Noun* result) {
 um_Error builtin_cos(um_Vector* v_params, um_Noun* result) {
 	if (v_params->size == 1) {
 		*result = new_number(
-		    cos(cast(v_params->data[0], f64_t).value.number));
+		    cos(cast(v_params->data[0], number_t).value.number));
 		return MakeErrorCode(OK);
 	} else {
 		return MakeErrorCode(ERROR_ARGS);
@@ -2975,7 +2905,7 @@ um_Error builtin_cos(um_Vector* v_params, um_Noun* result) {
 um_Error builtin_acos(um_Vector* v_params, um_Noun* result) {
 	if (v_params->size == 1) {
 		*result = new_number(
-		    acos(cast(v_params->data[0], f64_t).value.number));
+		    acos(cast(v_params->data[0], number_t).value.number));
 		return MakeErrorCode(OK);
 	} else {
 		return MakeErrorCode(ERROR_ARGS);
@@ -2985,7 +2915,7 @@ um_Error builtin_acos(um_Vector* v_params, um_Noun* result) {
 um_Error builtin_tan(um_Vector* v_params, um_Noun* result) {
 	if (v_params->size == 1) {
 		*result = new_number(
-		    tan(cast(v_params->data[0], f64_t).value.number));
+		    tan(cast(v_params->data[0], number_t).value.number));
 		return MakeErrorCode(OK);
 	} else {
 		return MakeErrorCode(ERROR_ARGS);
@@ -2995,7 +2925,7 @@ um_Error builtin_tan(um_Vector* v_params, um_Noun* result) {
 um_Error builtin_atan(um_Vector* v_params, um_Noun* result) {
 	if (v_params->size == 1) {
 		*result = new_number(
-		    atan(cast(v_params->data[0], f64_t).value.number));
+		    atan(cast(v_params->data[0], number_t).value.number));
 		return MakeErrorCode(OK);
 	} else {
 		return MakeErrorCode(ERROR_ARGS);
@@ -3005,12 +2935,10 @@ um_Error builtin_atan(um_Vector* v_params, um_Noun* result) {
 um_Error builtin_pow(um_Vector* v_params, um_Noun* result) {
 	if (v_params->size != 2) { return MakeErrorCode(ERROR_ARGS); }
 
-	double temp = pow(cast(v_params->data[0], f64_t).value.number,
-			  cast(v_params->data[1], f64_t).value.number);
+	double temp = pow(cast(v_params->data[0], number_t).value.number,
+			  cast(v_params->data[1], number_t).value.number);
 
-	*result = isnormal(temp) && (temp == floor(temp))
-		    ? new_integer((long)temp)
-		    : new_number(temp);
+	*result = new_number(temp);
 
 	return MakeErrorCode(OK);
 }
@@ -3018,11 +2946,9 @@ um_Error builtin_pow(um_Vector* v_params, um_Noun* result) {
 um_Error builtin_cbrt(um_Vector* v_params, um_Noun* result) {
 	if (v_params->size != 1) { return MakeErrorCode(ERROR_ARGS); }
 
-	double temp = cbrt(cast(v_params->data[0], f64_t).value.number);
+	double temp = cbrt(cast(v_params->data[0], number_t).value.number);
 
-	*result = isnormal(temp) && (temp == floor(temp))
-		    ? new_integer((long)temp)
-		    : new_number(temp);
+	*result = new_number(temp);
 
 	return MakeErrorCode(OK);
 }
@@ -3033,22 +2959,16 @@ um_Error builtin_add(um_Vector* v_params, um_Noun* result) {
 	size_t ac = v_params->size;
 	um_Noun a0 = v_params->data[0], a1 = v_params->data[1];
 	if (ac == 1) {
-		*result = a0.type == i32_t ? new (labs(a0.value.integer))
-			: a0.type == f64_t ? new (fabs(a0.value.number))
-					   : new ((long)0);
+		*result = new (fabs(a0.value.number));
 		return MakeErrorCode(OK);
 	} else if (ac > 2 || ac < 1) {
 		return MakeErrorCode(ERROR_ARGS);
 	}
 
-	if (a0.type == i32_t && a1.type == i32_t) {
-		*result = new (a0.value.integer + a1.value.integer);
-	} else {
-		double _temp = cast(a0, f64_t).value.number
-			     + cast(a1, f64_t).value.number;
+	double _temp
+	    = cast(a0, number_t).value.number + cast(a1, number_t).value.number;
 
-		*result = intp(_temp) ? new ((long)_temp) : new (_temp);
-	}
+	*result = intp(_temp) ? new ((double)_temp) : new (_temp);
 
 	return MakeErrorCode(OK);
 }
@@ -3057,23 +2977,16 @@ um_Error builtin_subtract(um_Vector* v_params, um_Noun* result) {
 	size_t ac = v_params->size;
 	um_Noun a0 = v_params->data[0], a1 = v_params->data[1];
 	if (ac == 1) {
-		*result = a0.type == i32_t ? new (-labs(a0.value.integer))
-			: a0.type == f64_t ? new (-fabs(a0.value.number))
-					   : new ((long)0);
+		*result = new (-fabs(a0.value.number));
 		return MakeErrorCode(OK);
 	} else if (ac > 2 || ac < 1) {
 		return MakeErrorCode(ERROR_ARGS);
 	}
 
-	if (a0.type == i32_t && a1.type == i32_t) {
-		*result = new (a0.value.integer - a1.value.integer);
-	} else {
-		double _temp = cast(a0, f64_t).value.number
-			     - cast(a1, f64_t).value.number;
+	double _temp
+	    = cast(a0, number_t).value.number - cast(a1, number_t).value.number;
 
-		*result = intp(_temp) ? new ((long)_temp) : new (_temp);
-	}
-
+	*result = new (_temp);
 	return MakeErrorCode(OK);
 }
 
@@ -3081,14 +2994,10 @@ um_Error builtin_modulo(um_Vector* v_params, um_Noun* result) {
 	um_Noun a0 = v_params->data[0], a1 = v_params->data[1];
 	if (v_params->size != 2) { return MakeErrorCode(ERROR_ARGS); }
 
-	if (a0.type == i32_t && a1.type == i32_t) {
-		*result = new (a0.value.integer % a1.value.integer);
-	} else {
-		long _temp = cast(a0, i32_t).value.integer
-			   % cast(a1, i32_t).value.integer;
+	double _temp = (long)cast(a0, number_t).value.number
+		     % (long)cast(a1, number_t).value.number;
 
-		*result = new (_temp);
-	}
+	*result = new (_temp);
 
 	return MakeErrorCode(OK);
 }
@@ -3097,14 +3006,10 @@ um_Error builtin_multiply(um_Vector* v_params, um_Noun* result) {
 	um_Noun a0 = v_params->data[0], a1 = v_params->data[1];
 	if (v_params->size != 2) { return MakeErrorCode(ERROR_ARGS); }
 
-	if (a0.type == i32_t && a1.type == i32_t) {
-		*result = new (a0.value.integer * a1.value.integer);
-	} else {
-		double _temp = cast(a0, f64_t).value.number
-			     * cast(a1, f64_t).value.number;
+	double _temp
+	    = cast(a0, number_t).value.number * cast(a1, number_t).value.number;
 
-		*result = intp(_temp) ? new ((long)_temp) : new (_temp);
-	}
+	*result = new (_temp);
 
 	return MakeErrorCode(OK);
 }
@@ -3113,14 +3018,10 @@ um_Error builtin_divide(um_Vector* v_params, um_Noun* result) {
 	um_Noun a0 = v_params->data[0], a1 = v_params->data[1];
 	if (v_params->size != 2) { return MakeErrorCode(ERROR_ARGS); }
 
-	if (a0.type == i32_t && a1.type == i32_t) {
-		*result = new (a0.value.integer / a1.value.integer);
-	} else {
-		double _temp = cast(a0, f64_t).value.number
-			     / cast(a1, f64_t).value.number;
+	double _temp
+	    = cast(a0, number_t).value.number / cast(a1, number_t).value.number;
 
-		*result = intp(_temp) ? new ((long)_temp) : new (_temp);
-	}
+	*result = new (_temp);
 
 	return MakeErrorCode(OK);
 }
@@ -3129,12 +3030,8 @@ um_Error builtin_less(um_Vector* v_params, um_Noun* result) {
 	um_Noun a0 = v_params->data[0], a1 = v_params->data[1];
 	if (v_params->size != 2) { return MakeErrorCode(ERROR_ARGS); }
 
-	if (a0.type == i32_t && a1.type == i32_t) {
-		*result = new ((bool)(a0.value.integer < a1.value.integer));
-	} else {
-		*result = new ((bool)(cast(a0, f64_t).value.number
-				      < cast(a1, f64_t).value.number));
-	}
+	*result = new ((bool)(cast(a0, number_t).value.number
+			      < cast(a1, number_t).value.number));
 
 	return MakeErrorCode(OK);
 }
@@ -3143,12 +3040,8 @@ um_Error builtin_greater(um_Vector* v_params, um_Noun* result) {
 	um_Noun a0 = v_params->data[0], a1 = v_params->data[1];
 	if (v_params->size != 2) { return MakeErrorCode(ERROR_ARGS); }
 
-	if (a0.type == i32_t && a1.type == i32_t) {
-		*result = new ((bool)(a0.value.integer > a1.value.integer));
-	} else {
-		*result = new ((bool)(cast(a0, f64_t).value.number
-				      > cast(a1, f64_t).value.number));
-	}
+	*result = new ((bool)(cast(a0, number_t).value.number
+			      > cast(a1, number_t).value.number));
 
 	return MakeErrorCode(OK);
 }
