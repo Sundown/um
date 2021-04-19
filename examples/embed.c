@@ -6,11 +6,18 @@ int main(int argc, char** argv) {
 	/* Define a count function, this code is correct and we don't care about
 	 * the return value but it serves as a fine place to declare ret */
 	um_Result ret = um_interpret_string(
-	    "(defun count (n) { (print (str \"counting to: \" n)) (defun recurse (n) (if (= n 1) (print \"Done!\") (recurse (- n 1)))) (recurse n)})");
+	    "(defun count (n) {"
+                "(print (str \"counting to: \" n))"
+                "(defun recurse (n)"
+                        "(if (= n 1)"
+                                "(print \"Done!\")"
+                                "(recurse (- n 1))))"
+                "(recurse n)})");
 
 	if (argc > 1) {
-		/* 9 is length of "(count )\0" */
-		size_t l = strlen(argv[1]) + 9;
+		/* length of "(count )\0" */
+                const size_t call_len = 9;
+		const size_t l = strlen(argv[1]) + call_len;
 		char* s = calloc(l, sizeof(char));
 		/* Substitute input number as count depth */
 		snprintf(s, l, "(count %ld)", atol(argv[1]));

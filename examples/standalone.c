@@ -12,13 +12,7 @@ repl:
 
 	for (int i = 1; i < argc; i++) {
 		if (argv[i][0] == '-') {
-			if (!strcmp(argv[i] + 1, "nogc")) {
-				um_global_gc_disabled = true;
-				continue;
-			} else if (!strcmp(argv[i] + 1, "debug")) {
-				um_global_debug_enabled = true;
-				continue;
-			} else if (!strcmp(argv[i] + 1, "repl")) {
+			if (!strcmp(argv[i] + 1, "repl")) {
 				do_repl = true;
 				continue;
 			} else if (!strcmp(argv[i] + 1, "ss")) {

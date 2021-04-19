@@ -33,7 +33,7 @@ Um is not ultimately intented to be a standalone interpreter, however `um_repl()
 
 To build examples run `cd examples/ && make`.
 
-Otherwise `#include path/um.h` in your project and build as you normally would. Specifying `-ansi` or `std=C89/C99` will not work as the interpreter is written in C11. Eventual elimination of C11 extentions will make this C89 compatible but this will take time.
+Otherwise `#include path/um.h` in your project and build as you normally would. Specifying `-ansi` or `std=C89/C99` will not work as the interpreter is written in C11.
 
 **Inspirations:**
 

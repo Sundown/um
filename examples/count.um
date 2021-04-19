@@ -2,11 +2,11 @@
 ; This can be run via standalone.c
 
 (defun count (n) {
-	(print (str "counting to: " n))
+	(print (str "Counting to: " n))
 
 	(defun recurse (n)
 		(if (= n 1)
-			(print "Done!")
+			(print "Done")
 			(recurse (- n 1))))
 
 	(recurse n)

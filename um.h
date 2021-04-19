@@ -37,9 +37,10 @@ SOFTWARE. */
 
 typedef enum {
 	nil_t,
+	noreturn_t,
 	pair_t,
 	noun_t,
-	number_t,
+	real_t,
 	builtin_t,
 	closure_t,
 	macro_t,
@@ -92,15 +93,16 @@ struct um_Noun {
 	union {
 		um_NounType type_v;
 		bool bool_v;
+		char character;
 		um_Error error_v;
 		double number;
 		struct um_Pair* pair;
 		char* symbol;
-		struct um_String* um_String;
+		struct um_String* string;
 		FILE* fp;
 		um_Builtin builtin;
 		um_Vector* vector_v;
-		struct um_Table* um_Table;
+		struct um_Table* table;
 		um_Error err_v;
 	} value;
 };
@@ -147,10 +149,11 @@ struct um_String {
 	struct um_String* next;
 };
 
-bool um_global_gc_disabled, um_global_debug_enabled;
-
 static const um_Noun nil
     = {.type = nil_t, .mut = false, .value = {.type_v = nil_t}};
+
+static const um_Noun um_noreturn
+    = {.type = noreturn_t, .mut = false, .value = {.type_v = noreturn_t}};
 
 um_Noun sym_quote, sym_const, sym_quasiquote, sym_unquote, sym_unquote_splicing,
     sym_def, sym_set, sym_defun, sym_fn, sym_if, sym_cond, sym_switch,
@@ -180,25 +183,22 @@ um_Noun cur_expr;
 #define cdr(p)	    	((p).value.pair->cdr)
 #define cdr2(p)	    	(cdr(p))
 #define pop(n)	    	(n = cdr2(n))
-#define isnil(n)	((n).type == nil_t)
-#define isnumber(a) 	(a.type == number_t)
-#define getnumber(a) 	(a.type == number_t ? a.value.number : 0)
-#define ingest(s)                                                         \
-	do {                                                              \
-		um_Result __tmperr = um_interpret_string(s);                 \
-		if (__tmperr.error._) { um_print_error(__tmperr.error); } \
-	} while (0)
+#define isnil(n)	((n).type == nil_t || (n).type == noreturn_t)
+
+#define ingest(s) do { um_Result _0 = um_interpret_string(s); \
+	if (_0.error._) { um_print_error(_0.error); }} while (0)
+
 #define MakeErrorCode(c) (um_Error){c, NULL}
 #define MakeError(c, m)  (um_Error){c, m}
 #define new(T) _Generic((T),  	\
 	bool: new_bool,      	\
 	char*: new_string,   	\
 	double: new_number,  	\
-	um_Builtin: new_builtin,	\
+	um_Builtin: new_builtin,\
 	um_NounType: new_type  	\
 )(T)
 
-inline um_Noun new_number(double x) { return (um_Noun){number_t, true, {.number = x}}; }
+inline um_Noun new_number(double x) { return (um_Noun){real_t, true, {.number = x}}; }
 inline um_Noun new_builtin(um_Builtin fn) { return (um_Noun){builtin_t, true, {.builtin = fn}}; }
 inline um_Noun new_type(um_NounType t) { return (um_Noun){type_t, true, {.type_v = t}}; }
 inline um_Noun new_bool(bool b) { return (um_Noun){bool_t, true, {.bool_v = b}}; }
@@ -214,8 +214,7 @@ um_Noun new_string(char* x);
 
 void stack_add(um_Noun a);
 
-um_Noun integer_to_t(long x, um_NounType t);
-um_Noun number_to_t(double x, um_NounType t);
+um_Noun real_to_t(double x, um_NounType t);
 um_Noun noun_to_t(char* x, um_NounType t);
 um_Noun string_to_t(char* x, um_NounType t);
 um_Noun bool_to_t(bool x, um_NounType t);
@@ -352,7 +351,7 @@ start:
 				if (err._) {
 					um_print_error(err);
 					printf("Error in expression: %s\n",
-					       to_string(expr, 0));
+					       to_string(expr, 1));
 					break;
 				} else {
 					um_print_expr(result);
@@ -433,10 +432,11 @@ um_Noun cast(um_Noun a, um_NounType t) {
 	if (a.type == t) { return a; }
 
 	switch (a.type) {
-		case nil_t: return nil_to_t(nil, t);
-		case number_t: return number_to_t(a.value.number, t);
+		case nil_t:
+		case noreturn_t: return nil_to_t(nil, t);
+		case real_t: return real_to_t(a.value.number, t);
 		case noun_t: return noun_to_t(a.value.symbol, t);
-		case string_t: return string_to_t(a.value.um_String->value, t);
+		case string_t: return string_to_t(a.value.string->value, t);
 		case bool_t: return bool_to_t(a.value.bool_v, t);
 		case type_t: return type_to_t(a.value.type_v, t);
 		default:
@@ -451,14 +451,14 @@ char* type_to_string(um_NounType a) {
 		case nil_t: return "Nil";
 		case pair_t: return "Pair";
 		case string_t: return "String";
-		case noun_t: return "um_Noun";
-		case number_t: return "Float";
+		case noun_t: return "Noun";
+		case real_t: return "Float";
 		case builtin_t: return "Builtin";
 		case closure_t: return "Closure";
 		case macro_t: return "Macro";
 		case input_t: return "Input";
 		case output_t: return "Output";
-		case table_t: return "um_Table";
+		case table_t: return "Table";
 		case bool_t: return "Bool";
 		case type_t: return "Type";
 		case error_t: return "Error";
@@ -480,7 +480,7 @@ char* error_to_string(um_Error e) {
 um_Noun nil_to_t(um_Noun x __attribute__((unused)), um_NounType t) {
 	switch (t) {
 		case nil_t: return nil;
-		case number_t: return new_number(NAN);
+		case real_t: return new_number(NAN);
 		case pair_t: return cons(nil, nil);
 		case bool_t: return new_bool(false);
 		case type_t: return new_type(nil_t);
@@ -490,8 +490,8 @@ um_Noun nil_to_t(um_Noun x __attribute__((unused)), um_NounType t) {
 	}
 }
 
-um_Noun number_to_t(double x, um_NounType t) {
-	if (t == number_t) { return new_number(x); }
+um_Noun real_to_t(double x, um_NounType t) {
+	if (t == real_t) { return new_number(x); }
 
 	char* buf = NULL;
 	if (t == noun_t || t == string_t) {
@@ -506,7 +506,7 @@ um_Noun number_to_t(double x, um_NounType t) {
 		case bool_t: return new_bool(x > 0 && isnormal(x) && !isnan(x));
 		case pair_t: return cons(new_number(x), nil);
 		case string_t: return new_string(buf);
-		case type_t: return new_type(number_t);
+		case type_t: return new_type(real_t);
 		default: return nil;
 	}
 }
@@ -515,7 +515,7 @@ um_Noun noun_to_t(char* x, um_NounType t) {
 	switch (t) {
 		case pair_t: return cons(intern(x), nil);
 		case noun_t: return intern(x);
-		case number_t: return new_number(strtod(x, NULL));
+		case real_t: return new_number(strtod(x, NULL));
 		case string_t: return new_string(x);
 		case type_t: return new_type(noun_t);
 		case bool_t:
@@ -529,7 +529,7 @@ um_Noun string_to_t(char* x, um_NounType t) {
 	switch (t) {
 		case pair_t: return cons(intern(x), nil);
 		case noun_t: return intern(x);
-		case number_t: return new_number(strtod(x, NULL));
+		case real_t: return new_number(strtod(x, NULL));
 		case string_t: return new_string(x);
 		case type_t: return new_type(noun_t);
 		case bool_t:
@@ -543,7 +543,7 @@ um_Noun bool_to_t(bool x, um_NounType t) {
 	switch (t) {
 		case bool_t: return new_bool(x);
 		case pair_t: return cons(new_bool(x), nil);
-		case number_t: return new_number((double)x);
+		case real_t: return new_number((double)x);
 		case noun_t: return x ? intern("true") : intern("false");
 		case string_t:
 			return x ? new_string("true") : new_string("false");
@@ -624,7 +624,7 @@ um_Noun new_string(char* x) {
 	um_Noun a;
 	struct um_String* s;
 	alloc_count++;
-	s = a.value.um_String = calloc(1, sizeof(struct um_String));
+	s = a.value.string = calloc(1, sizeof(struct um_String));
 	s->value = x;
 	s->mark = 0;
 	s->next = str_head;
@@ -716,7 +716,7 @@ um_Error parse_simple(const char* start, const char* end, um_Noun* result) {
 
 	double val = strtod(start, &p);
 	if (p == end) {
-		result->type = number_t;
+		result->type = real_t;
 		result->value.number = val;
 		return MakeErrorCode(OK);
 	} else if (start[0] == '"') {
@@ -744,6 +744,7 @@ um_Error parse_simple(const char* start, const char* end, um_Noun* result) {
 			ps++;
 			pt++;
 		}
+
 		*pt = 0;
 		buf = realloc(buf, pt - buf + 1);
 		*result = new_string(buf);
@@ -828,8 +829,8 @@ um_Error parse_simple(const char* start, const char* end, um_Noun* result) {
 
 				*result
 				    = cons(intern("range"),
-					   cons(cast(a1, number_t),
-						cons(cast(a2, number_t), nil)));
+					   cons(cast(a1, real_t),
+						cons(cast(a2, real_t), nil)));
 
 				return MakeErrorCode(OK);
 			}
@@ -880,7 +881,6 @@ um_Error read_list(const char* start, const char** end, um_Noun* result) {
 		if (err._) { return err; }
 
 		if (isnil(p)) {
-
 			*result = cons(item, nil);
 			p = *result;
 		} else {
@@ -1055,13 +1055,13 @@ um_Error apply(um_Noun fn, um_Vector* v_params, um_Noun* result) {
 		if (v_params->size != 1) { return MakeErrorCode(ERROR_ARGS); }
 
 		index = (size_t)(v_params->data[0]).value.number;
-		*result = new_string(
-		    (char[]){fn.value.um_String->value[index], '\0'});
+		*result
+		    = new_string((char[]){fn.value.string->value[index], '\0'});
 		return MakeErrorCode(OK);
 	} else if (fn.type == pair_t && listp(fn)) {
 		if (v_params->size != 1) { return MakeErrorCode(ERROR_ARGS); }
 
-		if (v_params->data[0].type != number_t) {
+		if (v_params->data[0].type != real_t) {
 			return MakeErrorCode(ERROR_TYPE);
 		}
 
@@ -1119,7 +1119,7 @@ um_Noun* list_index(um_Noun* list, size_t index) {
 um_Error env_assign_eq(um_Noun env, char* symbol, um_Noun value) {
 	while (1) {
 		um_Noun parent = car(env);
-		um_Table* ptbl = cdr(env).value.um_Table;
+		um_Table* ptbl = cdr(env).value.table;
 		um_TableEntry* a = table_get_sym(ptbl, symbol);
 		if (a) {
 			if (!a->v.mut) { return MakeErrorCode(ERROR_NOMUT); }
@@ -1630,7 +1630,7 @@ start:
 
 um_Error env_get(um_Noun env, char* symbol, um_Noun* result) {
 	while (1) {
-		um_Table* ptbl = cdr(env).value.um_Table;
+		um_Table* ptbl = cdr(env).value.table;
 		um_TableEntry* a = table_get_sym(ptbl, symbol);
 		if (a) {
 			*result = a->v;
@@ -1644,7 +1644,7 @@ um_Error env_get(um_Noun env, char* symbol, um_Noun* result) {
 }
 
 um_Error env_assign(um_Noun env, char* symbol, um_Noun value) {
-	um_Table* ptbl = cdr(env).value.um_Table;
+	um_Table* ptbl = cdr(env).value.table;
 	return table_set_sym(ptbl, symbol, value);
 }
 
@@ -1674,8 +1674,8 @@ um_Error env_bind(um_Noun env, um_Noun arg_names, um_Vector* v_params) {
 	um_Noun arg_name, val;
 	int val_unspecified = 0;
 	um_Error err;
-
 	size_t i = 0;
+
 	while (!isnil(arg_names)) {
 		if (arg_names.type == noun_t) {
 			env_assign(env,
@@ -1800,12 +1800,12 @@ start:
 			goto start;
 			break;
 		case string_t:
-			as = root.value.um_String;
+			as = root.value.string;
 			if (as->mark) return;
 			as->mark = 1;
 			break;
 		case table_t: {
-			at = root.value.um_Table;
+			at = root.value.table;
 			if (at->mark) return;
 			at->mark = 1;
 			for (i = 0; i < at->capacity; i++) {
@@ -1895,6 +1895,7 @@ char* to_string(um_Noun a, bool write) {
 	um_Noun a2;
 	switch (a.type) {
 		case nil_t: append_string(&s, "Nil"); break;
+		case noreturn_t: break;
 		case pair_t: {
 			if (listp(a) && list_len(a) == 2
 			    && eq_h(car(a), sym_quote)) {
@@ -1950,11 +1951,11 @@ char* to_string(um_Noun a, bool write) {
 		case noun_t: append_string(&s, a.value.symbol); break;
 		case string_t:
 			if (write) append_string(&s, "\"");
-			append_string(&s, a.value.um_String->value);
+			append_string(&s, a.value.string->value);
 			if (write) append_string(&s, "\"");
 			break;
-		case number_t:
-			sprintf(buf, "%.16g", a.value.number);
+		case real_t:
+			sprintf(buf, "%f", a.value.number);
 			append_string(&s, buf);
 			break;
 		case builtin_t:
@@ -2036,297 +2037,6 @@ um_Result um_load_file(const char* path) {
 	}
 }
 
-#define DECLARE_BUILTIN(name) \
-	um_Error builtin_##name(um_Vector* v_params, um_Noun* result)
-
-DECLARE_BUILTIN(car);
-DECLARE_BUILTIN(cdr);
-DECLARE_BUILTIN(cons);
-DECLARE_BUILTIN(apply);
-DECLARE_BUILTIN(eq);
-DECLARE_BUILTIN(eq_l);
-DECLARE_BUILTIN(exit);
-DECLARE_BUILTIN(macex);
-DECLARE_BUILTIN(string);
-DECLARE_BUILTIN(eval);
-DECLARE_BUILTIN(print);
-DECLARE_BUILTIN(add);
-DECLARE_BUILTIN(subtract);
-DECLARE_BUILTIN(multiply);
-DECLARE_BUILTIN(divide);
-DECLARE_BUILTIN(less);
-DECLARE_BUILTIN(greater);
-DECLARE_BUILTIN(trunc);
-DECLARE_BUILTIN(sin);
-DECLARE_BUILTIN(cos);
-DECLARE_BUILTIN(tan);
-DECLARE_BUILTIN(asin);
-DECLARE_BUILTIN(acos);
-DECLARE_BUILTIN(atan);
-DECLARE_BUILTIN(not );
-DECLARE_BUILTIN(pairp);
-DECLARE_BUILTIN(type);
-DECLARE_BUILTIN(float);
-DECLARE_BUILTIN(cast);
-DECLARE_BUILTIN(range);
-DECLARE_BUILTIN(len);
-DECLARE_BUILTIN(getlist);
-DECLARE_BUILTIN(setlist);
-DECLARE_BUILTIN(modulo);
-DECLARE_BUILTIN(pow);
-DECLARE_BUILTIN(cbrt);
-DECLARE_BUILTIN(and);
-DECLARE_BUILTIN(vector);
-
-#undef DECLARE_BUILTIN
-
-void um_init() {
-	srand((unsigned)time(0));
-	if (!um_global_symbol_capacity) { um_global_symbol_capacity = 1000; }
-	env = env_create(nil, um_global_symbol_capacity);
-
-	symbol_table = calloc(um_global_symbol_capacity, sizeof(char*));
-
-	sym_quote = intern("quote");
-	sym_quasiquote = intern("quasiquote");
-	sym_unquote = intern("unquote");
-	sym_unquote_splicing = intern("unquote-splicing");
-	sym_def = intern("def");
-	sym_const = intern("const");
-	sym_defun = intern("defun");
-	sym_fn = intern("lambda");
-	sym_if = intern("if");
-	sym_cond = intern("cond");
-	sym_switch = intern("switch");
-	sym_match = intern("match");
-
-	sym_mac = intern("mac");
-	sym_apply = intern("apply");
-	sym_cons = intern("cons");
-	sym_string = intern("str");
-	sym_string = intern("vec");
-	sym_num = intern("num");
-	sym_char = intern("char");
-	sym_do = intern("do");
-	sym_set = intern("set");
-	sym_true = intern("true");
-	sym_false = intern("false");
-
-	sym_nil_t = intern("@Nil");
-	sym_pair_t = intern("@Pair");
-	sym_noun_t = intern("@Noun");
-	sym_f64_t = intern("@Float");
-	sym_builtin_t = intern("@Builtin");
-	sym_closure_t = intern("@Closure");
-
-	sym_macro_t = intern("@Macro");
-	sym_string_t = intern("@String");
-	sym_vector_t = intern("@Vector");
-	sym_input_t = intern("@Input");
-	sym_output_t = intern("@Output");
-	sym_error_t = intern("@Error");
-	sym_type_t = intern("@Type");
-	sym_bool_t = intern("@Bool");
-
-#define ASSIGN_BUILTIN(name, fn_ptr) \
-	env_assign(env, intern(name).value.symbol, new_builtin(fn_ptr))
-
-	env_assign(env, sym_true.value.symbol, new ((bool)true));
-	env_assign(env, sym_false.value.symbol, new ((bool)false));
-	env_assign(env, intern("nil").value.symbol, nil);
-
-	env_assign(env, sym_nil_t.value.symbol, new ((um_NounType)nil_t));
-	env_assign(env, sym_pair_t.value.symbol, new ((um_NounType)pair_t));
-	env_assign(env, sym_noun_t.value.symbol, new ((um_NounType)noun_t));
-	env_assign(env, sym_f64_t.value.symbol, new ((um_NounType)number_t));
-	env_assign(
-	    env, sym_builtin_t.value.symbol, new ((um_NounType)builtin_t));
-	env_assign(
-	    env, sym_closure_t.value.symbol, new ((um_NounType)closure_t));
-	env_assign(env, sym_macro_t.value.symbol, new ((um_NounType)macro_t));
-	env_assign(env, sym_string_t.value.symbol, new ((um_NounType)string_t));
-	env_assign(env, sym_vector_t.value.symbol, new ((um_NounType)vector_t));
-	env_assign(env, sym_input_t.value.symbol, new ((um_NounType)input_t));
-	env_assign(env, sym_output_t.value.symbol, new ((um_NounType)output_t));
-	env_assign(env, sym_error_t.value.symbol, new ((um_NounType)error_t));
-	env_assign(env, sym_type_t.value.symbol, new ((um_NounType)type_t));
-	env_assign(env, sym_bool_t.value.symbol, new ((um_NounType)bool_t));
-
-	ASSIGN_BUILTIN("car", builtin_car);
-	ASSIGN_BUILTIN("cdr", builtin_cdr);
-	ASSIGN_BUILTIN("cons", builtin_cons);
-
-	ASSIGN_BUILTIN("+", builtin_add);
-	ASSIGN_BUILTIN("-", builtin_subtract);
-	ASSIGN_BUILTIN("*", builtin_multiply);
-	ASSIGN_BUILTIN("/", builtin_divide);
-	ASSIGN_BUILTIN("%", builtin_modulo);
-
-	ASSIGN_BUILTIN(">", builtin_greater);
-	ASSIGN_BUILTIN("<", builtin_less);
-	ASSIGN_BUILTIN("=", builtin_eq);
-	ASSIGN_BUILTIN("eq?", builtin_eq);
-	ASSIGN_BUILTIN("eqv?", builtin_eq_l);
-
-	ASSIGN_BUILTIN("__builtin_pow", builtin_pow);
-	ASSIGN_BUILTIN("__builtin_cbrt", builtin_cbrt);
-	ASSIGN_BUILTIN("not", builtin_not);
-	ASSIGN_BUILTIN("sin", builtin_sin);
-	ASSIGN_BUILTIN("__builtin_cos", builtin_cos);
-	ASSIGN_BUILTIN("__builtin_tan", builtin_tan);
-	ASSIGN_BUILTIN("__builtin_asin", builtin_asin);
-	ASSIGN_BUILTIN("__builtin_acos", builtin_acos);
-	ASSIGN_BUILTIN("__builtin_atan", builtin_atan);
-	ASSIGN_BUILTIN("len", builtin_len);
-	ASSIGN_BUILTIN("eval", builtin_eval);
-	ASSIGN_BUILTIN("type", builtin_type);
-	ASSIGN_BUILTIN("exit", builtin_exit);
-	ASSIGN_BUILTIN("apply", builtin_apply);
-	ASSIGN_BUILTIN("macex", builtin_macex);
-	ASSIGN_BUILTIN("str", builtin_string);
-	ASSIGN_BUILTIN("print", builtin_print);
-	ASSIGN_BUILTIN("pair?", builtin_pairp);
-	ASSIGN_BUILTIN("float", builtin_float);
-	ASSIGN_BUILTIN("range", builtin_range);
-	ASSIGN_BUILTIN("cast", builtin_cast);
-	ASSIGN_BUILTIN("getlist", builtin_getlist);
-	ASSIGN_BUILTIN("and", builtin_and);
-	ASSIGN_BUILTIN("setlist", builtin_setlist);
-	ASSIGN_BUILTIN("__builtin_vector", builtin_vector);
-
-	ASSIGN_BUILTIN("if", new_builtin(NULL).value.builtin);
-	ASSIGN_BUILTIN("fn", new_builtin(NULL).value.builtin);
-	ASSIGN_BUILTIN("do", new_builtin(NULL).value.builtin);
-	ASSIGN_BUILTIN("def", new_builtin(NULL).value.builtin);
-	ASSIGN_BUILTIN("const", new_builtin(NULL).value.builtin);
-	ASSIGN_BUILTIN("mac", new_builtin(NULL).value.builtin);
-	ASSIGN_BUILTIN("cond", new_builtin(NULL).value.builtin);
-	ASSIGN_BUILTIN("switch", new_builtin(NULL).value.builtin);
-	ASSIGN_BUILTIN("match", new_builtin(NULL).value.builtin);
-	ASSIGN_BUILTIN("defun", new_builtin(NULL).value.builtin);
-	ASSIGN_BUILTIN("quote", new_builtin(NULL).value.builtin);
-	ASSIGN_BUILTIN("lambda", new_builtin(NULL).value.builtin);
-
-	ingest("\
-(def (foldl proc init list)\
-	(if !(nil? list)\
-		(foldl proc (proc init (car list)) (cdr list))\
-		init))");
-
-	ingest("\
-(def (foldr p i l)\
-	(if !(nil? l)\
-		(p (car l) (foldr p i (cdr l)))\
-		i))");
-
-	ingest("\
-(def (nil? x)\
-	(= x ()))");
-
-	ingest("\
-(def (list . items)\
-	(foldr cons nil items))");
-
-	ingest("\
-(def (unary-map proc list)\
-	(foldr\
-		(lambda (x rest) (cons (proc x) rest))\
-		nil\
-		list))");
-
-	ingest("\
-(def (map proc . arg-lists)\
-	(if !(nil? (car arg-lists))\
-		(cons\
-			(apply proc (unary-map car arg-lists))\
-			(apply map (cons proc (unary-map cdr arg-lists))))\
-		nil))");
-
-	ingest("\
-(def (caar x)\
-	(car (car x)))");
-
-	ingest("\
-(def (cadr x)\
-	(car (cdr x)))");
-
-	ingest("\
-(mac unless (cond expr)\
-	(list 'if condition () expr))");
-
-	ingest("\
-(def (append a b)\
-	(foldr cons b a))");
-
-	ingest("\
-(mac quasiquote (x)\
- 	(if (pair? x)\
-  		(if (= (car x) 'unquote)\
-   			(cadr x)\
-    			(if (if (pair? (car x)) (= (caar x) 'unquote-splicing))\
-     				(list 'append (cadr (car x)) (list 'quasiquote (cdr x)))\
-     				(list 'cons (list 'quasiquote (car x)) (list 'quasiquote (cdr x)))))\
-    		(list 'quote x)))");
-
-	ingest("\
-(mac let (defs . body)\
-	`((lambda ,(map car defs) ,@body) ,@(map cadr defs)))");
-
-	ingest("\
-(defun std (fun)\
-	(switch fun \
-		('vector __builtin_vector) \
-		('list list) \
-		('map map) \
-		('cast cast)))");
-
-	ingest("\
-(defun math (fun)\
-	(switch fun\
-		('pi 3.1415926535897931)\
-		('e 2.7182818284590452)\
-		('tan __builtin_tan)\
-		('sin __builtin_sin)\
-		('cos __builtin_cos)\
-		('atan __builtin_atan)\
-		('asin __builtin_asin)\
-		('acos __builtin_acos)\
-		('range range)\
-		('sqrt (lambda (x) (math::pow x (float 0.5))))\
-		('cbrt __builtin_cbrt)\
-		('square (lambda (x) (math::pow x 2)))\
-		('cube (lambda (x) (math::pow x 3)))\
-		('min (lambda (x) \
-			(if (nil? (cdr x))\
-				(car x) \
-				(foldl (lambda (a b) (if (< a b) a b)) (car x) (cdr x)))))\
-		('max (lambda (x) \
-			(if (nil? (cdr x))\
-				(car x) \
-				(foldl (lambda (a b) (if (< a b) b a)) (car x) (cdr x)))))\
-		('pow __builtin_pow)))");
-
-	ingest("\
-(def (for-each proc items)\
-  	(if (nil? items)\
-   		true\
-   		(if ((lambda (x) true) (proc (car items))) \
-    			(for-each proc (cdr items)))))");
-
-	ingest("\
-(def (filter pred lst)\
-   	(if (nil? lst)\
-    		()\
-    		(if (pred (car lst))\
-     			(cons (car lst)\
-     			(filter pred (cdr lst)))\
-   	(filter pred (cdr lst)))))");
-
-	ingest("\
-(defun curry (f)\
-	(lambda (a) (lambda (b) (f a b))))");
-}
-
 char* readline_fp(char* prompt, FILE* fp) {
 	size_t size = 80;
 	char* um_String;
@@ -2399,12 +2109,12 @@ bool eq_h(um_Noun a, um_Noun b) {
 
 	switch (a.type) {
 		case nil_t: return isnil(a) && isnil(b);
-		case number_t: return a.value.number == b.value.number;
+		case real_t: return a.value.number == b.value.number;
 		/* Equal symbols share memory */
 		case noun_t: return a.value.symbol == b.value.symbol;
 		case string_t:
-			return !strcmp(a.value.um_String->value,
-				       b.value.um_String->value);
+			return !strcmp(a.value.string->value,
+				       b.value.string->value);
 		case builtin_t: return a.value.builtin == b.value.builtin;
 		case input_t:
 		case output_t: return a.value.fp == b.value.fp;
@@ -2446,7 +2156,7 @@ size_t hash_code(um_Noun a) {
 			return r;
 		case noun_t: return hash_code_sym(a.value.symbol);
 		case string_t: {
-			char* v = a.value.um_String->value;
+			char* v = a.value.string->value;
 			for (; *v != 0; v++) {
 				r *= 31;
 				r += *v;
@@ -2454,7 +2164,7 @@ size_t hash_code(um_Noun a) {
 
 			return r;
 		}
-		case number_t:
+		case real_t:
 			return (size_t)((void*)a.value.symbol)
 			     + (size_t)a.value.number;
 		case builtin_t: return (size_t)a.value.builtin;
@@ -2475,7 +2185,7 @@ um_Noun new_table(size_t capacity) {
 	um_Table* s;
 	size_t i;
 	alloc_count++;
-	s = a.value.um_Table = calloc(1, sizeof(um_Table));
+	s = a.value.table = calloc(1, sizeof(um_Table));
 	s->capacity = capacity;
 	s->size = 0;
 	s->data = calloc(capacity, sizeof(um_TableEntry*));
@@ -2484,7 +2194,7 @@ um_Noun new_table(size_t capacity) {
 	s->mark = 0;
 	s->next = table_head;
 	table_head = s;
-	a.value.um_Table = s;
+	a.value.table = s;
 	a.type = table_t;
 	stack_add(a);
 	return a;
@@ -2564,7 +2274,7 @@ um_Error builtin_type(um_Vector* v_params, um_Noun* result) {
 
 um_Error builtin_getlist(um_Vector* v_params, um_Noun* result) {
 	if (v_params->size != 2) { return MakeErrorCode(ERROR_ARGS); }
-	if (v_params->data[0].type != number_t) {
+	if (v_params->data[0].type != real_t) {
 		return MakeError(
 		    ERROR_TYPE,
 		    "list_index: first parameter must be number type");
@@ -2588,7 +2298,7 @@ um_Error builtin_getlist(um_Vector* v_params, um_Noun* result) {
 
 um_Error builtin_setlist(um_Vector* v_params, um_Noun* result) {
 	if (v_params->size != 3) { return MakeErrorCode(ERROR_ARGS); }
-	if (v_params->data[0].type != number_t) {
+	if (v_params->data[0].type != real_t) {
 		return MakeError(
 		    ERROR_TYPE,
 		    "list_index: first parameter must be number type");
@@ -2597,12 +2307,11 @@ um_Error builtin_setlist(um_Vector* v_params, um_Noun* result) {
 		return MakeError(ERROR_TYPE,
 				 "list_index: second parameter must be list");
 	}
-
-	um_Noun* t = list_index(&v_params->data[1],
-				(size_t)v_params->data[0].value.number);
-	t->type = v_params->data[2].type;
-	t->value = v_params->data[2].value;
-	*result = *t;
+	um_Noun t = copy_list(v_params->data[1]);
+	um_Noun* i = list_index(&t, v_params->data[0].value.number);
+	i->type = v_params->data[2].type;
+	i->value = v_params->data[2].value;
+	*result = t;
 	return MakeErrorCode(OK);
 }
 
@@ -2613,7 +2322,7 @@ um_Error builtin_len(um_Vector* v_params, um_Noun* result) {
 		*result = new ((double)list_len(v_params->data[0]));
 	} else if (v_params->data[0].type == string_t) {
 		*result = new (
-		    (double)strlen(v_params->data[0].value.um_String->value));
+		    (double)strlen(v_params->data[0].value.string->value));
 	} else if (v_params->data[0].type == vector_t) {
 
 		*result = new ((double)v_params->data[0].value.vector_v->size);
@@ -2631,13 +2340,18 @@ um_Error builtin_range(um_Vector* v_params, um_Noun* result) {
 				 "range: arg count must be nonzero below 3");
 	}
 
-	if (!isnumber(v_params->data[0]) || !isnumber(v_params->data[0])) {
+	if (v_params->data[0].type != real_t
+	    || (v_params->size > 1 && v_params->data[1].type != real_t)) {
 		return MakeError(ERROR_TYPE,
 				 "range: args must be type numeric");
 	}
 
-	double a = cast(v_params->data[0], number_t).value.number,
-	       b = cast(v_params->data[1], number_t).value.number;
+	double a = v_params->size > 1
+		     ? cast(v_params->data[0], real_t).value.number
+		     : 0,
+	       b = v_params->size > 1
+		     ? cast(v_params->data[1], real_t).value.number
+		     : cast(v_params->data[0], real_t).value.number;
 
 	um_Noun range = nil;
 
@@ -2770,7 +2484,7 @@ um_Error builtin_exit(um_Vector* v_params, um_Noun* result) {
 	um_Noun code = nil;
 	if (v_params->size != 1) { return MakeErrorCode(ERROR_ARGS); }
 
-	if (isnil(code = cast(v_params->data[0], number_t))) {
+	if (isnil(code = cast(v_params->data[0], real_t))) {
 		return MakeErrorCode(ERROR_TYPE);
 	}
 
@@ -2855,7 +2569,7 @@ um_Error builtin_cast(um_Vector* v_params, um_Noun* result) {
 
 um_Error builtin_float(um_Vector* v_params, um_Noun* result) {
 	if (v_params->size == 1) {
-		*result = cast(v_params->data[0], number_t);
+		*result = cast(v_params->data[0], real_t);
 
 		return MakeErrorCode(OK);
 	} else {
@@ -2875,7 +2589,7 @@ um_Error builtin_and(um_Vector* v_params, um_Noun* result) {
 um_Error builtin_sin(um_Vector* v_params, um_Noun* result) {
 	if (v_params->size == 1) {
 		*result = new_number(
-		    sin(cast(v_params->data[0], number_t).value.number));
+		    sin(cast(v_params->data[0], real_t).value.number));
 		return MakeErrorCode(OK);
 	} else {
 		return MakeErrorCode(ERROR_ARGS);
@@ -2885,7 +2599,7 @@ um_Error builtin_sin(um_Vector* v_params, um_Noun* result) {
 um_Error builtin_asin(um_Vector* v_params, um_Noun* result) {
 	if (v_params->size == 1) {
 		*result = new_number(
-		    asin(cast(v_params->data[0], number_t).value.number));
+		    asin(cast(v_params->data[0], real_t).value.number));
 		return MakeErrorCode(OK);
 	} else {
 		return MakeErrorCode(ERROR_ARGS);
@@ -2895,7 +2609,7 @@ um_Error builtin_asin(um_Vector* v_params, um_Noun* result) {
 um_Error builtin_cos(um_Vector* v_params, um_Noun* result) {
 	if (v_params->size == 1) {
 		*result = new_number(
-		    cos(cast(v_params->data[0], number_t).value.number));
+		    cos(cast(v_params->data[0], real_t).value.number));
 		return MakeErrorCode(OK);
 	} else {
 		return MakeErrorCode(ERROR_ARGS);
@@ -2905,7 +2619,7 @@ um_Error builtin_cos(um_Vector* v_params, um_Noun* result) {
 um_Error builtin_acos(um_Vector* v_params, um_Noun* result) {
 	if (v_params->size == 1) {
 		*result = new_number(
-		    acos(cast(v_params->data[0], number_t).value.number));
+		    acos(cast(v_params->data[0], real_t).value.number));
 		return MakeErrorCode(OK);
 	} else {
 		return MakeErrorCode(ERROR_ARGS);
@@ -2915,7 +2629,7 @@ um_Error builtin_acos(um_Vector* v_params, um_Noun* result) {
 um_Error builtin_tan(um_Vector* v_params, um_Noun* result) {
 	if (v_params->size == 1) {
 		*result = new_number(
-		    tan(cast(v_params->data[0], number_t).value.number));
+		    tan(cast(v_params->data[0], real_t).value.number));
 		return MakeErrorCode(OK);
 	} else {
 		return MakeErrorCode(ERROR_ARGS);
@@ -2925,7 +2639,7 @@ um_Error builtin_tan(um_Vector* v_params, um_Noun* result) {
 um_Error builtin_atan(um_Vector* v_params, um_Noun* result) {
 	if (v_params->size == 1) {
 		*result = new_number(
-		    atan(cast(v_params->data[0], number_t).value.number));
+		    atan(cast(v_params->data[0], real_t).value.number));
 		return MakeErrorCode(OK);
 	} else {
 		return MakeErrorCode(ERROR_ARGS);
@@ -2935,8 +2649,8 @@ um_Error builtin_atan(um_Vector* v_params, um_Noun* result) {
 um_Error builtin_pow(um_Vector* v_params, um_Noun* result) {
 	if (v_params->size != 2) { return MakeErrorCode(ERROR_ARGS); }
 
-	double temp = pow(cast(v_params->data[0], number_t).value.number,
-			  cast(v_params->data[1], number_t).value.number);
+	double temp = pow(cast(v_params->data[0], real_t).value.number,
+			  cast(v_params->data[1], real_t).value.number);
 
 	*result = new_number(temp);
 
@@ -2946,14 +2660,12 @@ um_Error builtin_pow(um_Vector* v_params, um_Noun* result) {
 um_Error builtin_cbrt(um_Vector* v_params, um_Noun* result) {
 	if (v_params->size != 1) { return MakeErrorCode(ERROR_ARGS); }
 
-	double temp = cbrt(cast(v_params->data[0], number_t).value.number);
+	double temp = cbrt(cast(v_params->data[0], real_t).value.number);
 
 	*result = new_number(temp);
 
 	return MakeErrorCode(OK);
 }
-
-#define intp(d) (bool)(isnormal(d) && (d == floor(d)))
 
 um_Error builtin_add(um_Vector* v_params, um_Noun* result) {
 	size_t ac = v_params->size;
@@ -2966,9 +2678,9 @@ um_Error builtin_add(um_Vector* v_params, um_Noun* result) {
 	}
 
 	double _temp
-	    = cast(a0, number_t).value.number + cast(a1, number_t).value.number;
+	    = cast(a0, real_t).value.number + cast(a1, real_t).value.number;
 
-	*result = intp(_temp) ? new ((double)_temp) : new (_temp);
+	*result = new (_temp);
 
 	return MakeErrorCode(OK);
 }
@@ -2984,7 +2696,7 @@ um_Error builtin_subtract(um_Vector* v_params, um_Noun* result) {
 	}
 
 	double _temp
-	    = cast(a0, number_t).value.number - cast(a1, number_t).value.number;
+	    = cast(a0, real_t).value.number - cast(a1, real_t).value.number;
 
 	*result = new (_temp);
 	return MakeErrorCode(OK);
@@ -2994,8 +2706,8 @@ um_Error builtin_modulo(um_Vector* v_params, um_Noun* result) {
 	um_Noun a0 = v_params->data[0], a1 = v_params->data[1];
 	if (v_params->size != 2) { return MakeErrorCode(ERROR_ARGS); }
 
-	double _temp = (long)cast(a0, number_t).value.number
-		     % (long)cast(a1, number_t).value.number;
+	double _temp = (long)cast(a0, real_t).value.number
+		     % (long)cast(a1, real_t).value.number;
 
 	*result = new (_temp);
 
@@ -3007,7 +2719,7 @@ um_Error builtin_multiply(um_Vector* v_params, um_Noun* result) {
 	if (v_params->size != 2) { return MakeErrorCode(ERROR_ARGS); }
 
 	double _temp
-	    = cast(a0, number_t).value.number * cast(a1, number_t).value.number;
+	    = cast(a0, real_t).value.number * cast(a1, real_t).value.number;
 
 	*result = new (_temp);
 
@@ -3019,7 +2731,7 @@ um_Error builtin_divide(um_Vector* v_params, um_Noun* result) {
 	if (v_params->size != 2) { return MakeErrorCode(ERROR_ARGS); }
 
 	double _temp
-	    = cast(a0, number_t).value.number / cast(a1, number_t).value.number;
+	    = cast(a0, real_t).value.number / cast(a1, real_t).value.number;
 
 	*result = new (_temp);
 
@@ -3030,8 +2742,8 @@ um_Error builtin_less(um_Vector* v_params, um_Noun* result) {
 	um_Noun a0 = v_params->data[0], a1 = v_params->data[1];
 	if (v_params->size != 2) { return MakeErrorCode(ERROR_ARGS); }
 
-	*result = new ((bool)(cast(a0, number_t).value.number
-			      < cast(a1, number_t).value.number));
+	*result = new ((bool)(cast(a0, real_t).value.number
+			      < cast(a1, real_t).value.number));
 
 	return MakeErrorCode(OK);
 }
@@ -3040,10 +2752,375 @@ um_Error builtin_greater(um_Vector* v_params, um_Noun* result) {
 	um_Noun a0 = v_params->data[0], a1 = v_params->data[1];
 	if (v_params->size != 2) { return MakeErrorCode(ERROR_ARGS); }
 
-	*result = new ((bool)(cast(a0, number_t).value.number
-			      > cast(a1, number_t).value.number));
+	*result = new ((bool)(cast(a0, real_t).value.number
+			      > cast(a1, real_t).value.number));
 
 	return MakeErrorCode(OK);
+}
+
+um_Error builtin_floor(um_Vector* v_params, um_Noun* result) {
+	um_Noun a0 = v_params->data[0];
+	if (v_params->size != 1) { return MakeErrorCode(ERROR_ARGS); }
+
+	*result = new (floor(cast(a0, real_t).value.number));
+
+	return MakeErrorCode(OK);
+}
+
+um_Error builtin_ceil(um_Vector* v_params, um_Noun* result) {
+	um_Noun a0 = v_params->data[0];
+	if (v_params->size != 1) { return MakeErrorCode(ERROR_ARGS); }
+
+	*result = new (ceil(cast(a0, real_t).value.number));
+
+	return MakeErrorCode(OK);
+}
+
+um_Error builtin_hex(um_Vector* v_params, um_Noun* result) {
+	um_Noun a0 = v_params->data[0];
+	if (v_params->size != 1) { return MakeErrorCode(ERROR_ARGS); }
+
+	char* str = calloc(33, sizeof(char));
+	sprintf(str, "%x", (int32_t)cast(a0, real_t).value.number);
+
+	char* tmp = strdup(str);
+
+	*result = new (tmp);
+
+	free(str);
+
+	return MakeErrorCode(OK);
+}
+
+um_Error builtin_precision(um_Vector* v_params, um_Noun* result) {
+	double v = cast(v_params->data[0], real_t).value.number,
+	       n = cast(v_params->data[1], real_t).value.number;
+	if (v_params->size != 2) { return MakeErrorCode(ERROR_ARGS); }
+
+	/* This method isn't ideal but printf precision
+	   isn't available at runtime */
+	char* tmp = calloc(65, sizeof(char));
+	/* Convert decimal places wanted to multiplier, 2 -> 100 */
+	long places = (long)pow(10, n);
+	sprintf(tmp, "%f", round(v * places) / places);
+	/* 'Trim' string n chars from decimal point */
+	tmp[strcspn(tmp, ".") + (size_t)n + 1] = '\0';
+
+	/* Free excess memory */
+	char* str = strdup(tmp);
+
+	*result = new (str);
+
+	free(tmp);
+
+	return MakeErrorCode(OK);
+}
+
+um_Error builtin_upper(um_Vector* v_params, um_Noun* result) {
+	if (v_params->size != 1) { return MakeErrorCode(ERROR_ARGS); }
+	char *s = strdup(cast(v_params->data[0], string_t).value.string->value),
+	     *tmp = s;
+
+	while (*tmp) {
+		*tmp = (*tmp > 'a' && *tmp <= 'z') ? toupper(*tmp) : *tmp;
+		tmp++;
+	}
+
+	*result = new (s);
+	return MakeErrorCode(OK);
+}
+
+um_Error builtin_lower(um_Vector* v_params, um_Noun* result) {
+	if (v_params->size != 1) { return MakeErrorCode(ERROR_ARGS); }
+	char *s = strdup(cast(v_params->data[0], string_t).value.string->value),
+	     *tmp = s;
+
+	while (*tmp) {
+		*tmp = (*tmp > 'A' && *tmp <= 'Z') ? tolower(*tmp) : *tmp;
+		tmp++;
+	}
+
+	*result = new (s);
+	return MakeErrorCode(OK);
+}
+
+void um_init() {
+	srand((unsigned)time(0));
+	if (!um_global_symbol_capacity) { um_global_symbol_capacity = 1000; }
+	env = env_create(nil, um_global_symbol_capacity);
+
+	symbol_table = calloc(um_global_symbol_capacity, sizeof(char*));
+
+	sym_quote = intern("quote");
+	sym_quasiquote = intern("quasiquote");
+	sym_unquote = intern("unquote");
+	sym_unquote_splicing = intern("unquote-splicing");
+	sym_def = intern("def");
+	sym_const = intern("const");
+	sym_defun = intern("defun");
+	sym_fn = intern("lambda");
+	sym_if = intern("if");
+	sym_cond = intern("cond");
+	sym_switch = intern("switch");
+	sym_match = intern("match");
+
+	sym_mac = intern("mac");
+	sym_apply = intern("apply");
+	sym_cons = intern("cons");
+	sym_string = intern("str");
+	sym_string = intern("vec");
+	sym_num = intern("num");
+	sym_char = intern("char");
+	sym_do = intern("do");
+	sym_set = intern("set");
+	sym_true = intern("true");
+	sym_false = intern("false");
+
+	sym_nil_t = intern("@Nil");
+	sym_pair_t = intern("@Pair");
+	sym_noun_t = intern("@Noun");
+	sym_f64_t = intern("@Float");
+	sym_builtin_t = intern("@Builtin");
+	sym_closure_t = intern("@Closure");
+
+	sym_macro_t = intern("@Macro");
+	sym_string_t = intern("@String");
+	sym_vector_t = intern("@Vector");
+	sym_input_t = intern("@Input");
+	sym_output_t = intern("@Output");
+	sym_error_t = intern("@Error");
+	sym_type_t = intern("@Type");
+	sym_bool_t = intern("@Bool");
+
+#define add_builtin(name, fn_ptr) \
+	env_assign(env, intern(name).value.symbol, new_builtin(fn_ptr))
+
+	env_assign(env, sym_true.value.symbol, new ((bool)true));
+	env_assign(env, sym_false.value.symbol, new ((bool)false));
+	env_assign(env, intern("nil").value.symbol, nil);
+	env_assign(env, intern("_").value.symbol, um_noreturn);
+
+	env_assign(env, sym_nil_t.value.symbol, new ((um_NounType)nil_t));
+	env_assign(env, sym_pair_t.value.symbol, new ((um_NounType)pair_t));
+	env_assign(env, sym_noun_t.value.symbol, new ((um_NounType)noun_t));
+	env_assign(env, sym_f64_t.value.symbol, new ((um_NounType)real_t));
+	env_assign(
+	    env, sym_builtin_t.value.symbol, new ((um_NounType)builtin_t));
+	env_assign(
+	    env, sym_closure_t.value.symbol, new ((um_NounType)closure_t));
+	env_assign(env, sym_macro_t.value.symbol, new ((um_NounType)macro_t));
+	env_assign(env, sym_string_t.value.symbol, new ((um_NounType)string_t));
+	env_assign(env, sym_vector_t.value.symbol, new ((um_NounType)vector_t));
+	env_assign(env, sym_input_t.value.symbol, new ((um_NounType)input_t));
+	env_assign(env, sym_output_t.value.symbol, new ((um_NounType)output_t));
+	env_assign(env, sym_error_t.value.symbol, new ((um_NounType)error_t));
+	env_assign(env, sym_type_t.value.symbol, new ((um_NounType)type_t));
+	env_assign(env, sym_bool_t.value.symbol, new ((um_NounType)bool_t));
+
+	add_builtin("car", builtin_car);
+	add_builtin("cdr", builtin_cdr);
+	add_builtin("cons", builtin_cons);
+
+	add_builtin("+", builtin_add);
+	add_builtin("-", builtin_subtract);
+	add_builtin("*", builtin_multiply);
+	add_builtin("/", builtin_divide);
+	add_builtin("%", builtin_modulo);
+
+	add_builtin(">", builtin_greater);
+	add_builtin("<", builtin_less);
+	add_builtin("=", builtin_eq);
+	add_builtin("eq?", builtin_eq);
+	add_builtin("eqv?", builtin_eq_l);
+
+	add_builtin("__builtin_pow", builtin_pow);
+	add_builtin("__builtin_cbrt", builtin_cbrt);
+	add_builtin("not", builtin_not);
+	add_builtin("__builtin_sin", builtin_sin);
+	add_builtin("__builtin_cos", builtin_cos);
+	add_builtin("__builtin_tan", builtin_tan);
+	add_builtin("__builtin_asin", builtin_asin);
+	add_builtin("__builtin_acos", builtin_acos);
+	add_builtin("__builtin_atan", builtin_atan);
+	add_builtin("len", builtin_len);
+	add_builtin("eval", builtin_eval);
+	add_builtin("type", builtin_type);
+	add_builtin("exit", builtin_exit);
+	add_builtin("apply", builtin_apply);
+	add_builtin("macex", builtin_macex);
+	add_builtin("str", builtin_string);
+	add_builtin("print", builtin_print);
+	add_builtin("pair?", builtin_pairp);
+	add_builtin("float", builtin_float);
+	add_builtin("range", builtin_range);
+	add_builtin("cast", builtin_cast);
+	add_builtin("getlist", builtin_getlist);
+	add_builtin("and", builtin_and);
+	add_builtin("setlist", builtin_setlist);
+	add_builtin("__builtin_vector", builtin_vector);
+	add_builtin("__builtin_ceil", builtin_ceil);
+	add_builtin("__builtin_floor", builtin_floor);
+	add_builtin("__builtin_format_hex", builtin_hex);
+	add_builtin("__builtin_format_precision", builtin_precision);
+
+	add_builtin("__builtin_format_upper", builtin_upper);
+	add_builtin("__builtin_format_lower", builtin_lower);
+
+	add_builtin("if", new_builtin(NULL).value.builtin);
+	add_builtin("fn", new_builtin(NULL).value.builtin);
+	add_builtin("do", new_builtin(NULL).value.builtin);
+	add_builtin("def", new_builtin(NULL).value.builtin);
+	add_builtin("const", new_builtin(NULL).value.builtin);
+	add_builtin("mac", new_builtin(NULL).value.builtin);
+	add_builtin("cond", new_builtin(NULL).value.builtin);
+	add_builtin("switch", new_builtin(NULL).value.builtin);
+	add_builtin("match", new_builtin(NULL).value.builtin);
+	add_builtin("defun", new_builtin(NULL).value.builtin);
+	add_builtin("quote", new_builtin(NULL).value.builtin);
+	add_builtin("lambda", new_builtin(NULL).value.builtin);
+	ingest("\
+(defun compose (f g)\
+	(lambda (x) (f (g x))))");
+
+	ingest("\
+(def (foldl proc init list)\
+	(if !(nil? list)\
+		(foldl proc (proc init (car list)) (cdr list))\
+		init))");
+
+	ingest("\
+(def (foldr p i l)\
+	(if !(nil? l)\
+		(p (car l) (foldr p i (cdr l)))\
+		i))");
+
+	ingest("\
+(def (nil? x)\
+	(= x ()))");
+
+	ingest("\
+(def (list . items)\
+	(foldr cons nil items))");
+
+	ingest("\
+(def (unary-map proc list)\
+	(foldr\
+		(lambda (x rest) (cons (proc x) rest))\
+		nil\
+		list))");
+
+	ingest("\
+(def (map proc . arg-lists)\
+	(if !(nil? (car arg-lists))\
+		(cons\
+			(apply proc (unary-map car arg-lists))\
+			(apply map (cons proc (unary-map cdr arg-lists))))\
+		nil))");
+
+	ingest("\
+(def (caar x)\
+	(car (car x)))");
+
+	ingest("\
+(def (cadr x)\
+	(car (cdr x)))");
+
+	ingest("\
+(mac unless (cond expr)\
+	(list 'if condition () expr))");
+
+	ingest("\
+(def (append a b)\
+	(foldr cons b a))");
+
+	ingest("\
+(mac quasiquote (x)\
+ 	(if (pair? x)\
+  		(if (= (car x) 'unquote)\
+   			(cadr x)\
+    			(if (if (pair? (car x)) (= (caar x) 'unquote-splicing))\
+     				(list 'append (cadr (car x)) (list 'quasiquote (cdr x)))\
+     				(list 'cons (list 'quasiquote (car x)) (list 'quasiquote (cdr x)))))\
+    		(list 'quote x)))");
+
+	ingest("\
+(mac let (defs . body)\
+	`((lambda ,(map car defs) ,@body) ,@(map cadr defs)))");
+
+	ingest("\
+(defun std (fun)\
+	(switch fun \
+		('vector __builtin_vector) \
+		('list list) \
+		('map map) \
+		('cast cast)))");
+
+	ingest("\
+(defun format (fun)\
+	(switch fun\
+		('hex __builtin_format_hex)\
+		('precision __builtin_format_precision)\
+		('upper __builtin_format_upper)\
+		('lower __builtin_format_lower)\
+		))");
+
+	ingest("\
+(defun math (fun)\
+	(switch fun\
+		('pi 3.1415926535897931)\
+		('e 2.7182818284590452)\
+		('ceil __builtin_ceil)\
+		('floor __builtin_floor)\
+		('tan __builtin_tan)\
+		('sin __builtin_sin)\
+		('cos __builtin_cos)\
+		('atan __builtin_atan)\
+		('asin __builtin_asin)\
+		('acos __builtin_acos)\
+		('range range)\
+		('sqrt (lambda (x) (math::pow x (float 0.5))))\
+		('cbrt __builtin_cbrt)\
+		('square (lambda (x) (math::pow x 2)))\
+		('cube (lambda (x) (math::pow x 3)))\
+		('sum (lambda (x) (reduce + x 0)))\
+		('product (lambda (x) (reduce * x 1)))\
+		('sigma (lambda (f s e)\
+			(reduce + (map f (range s e)) 0)))\
+		('min (lambda (x) \
+			(if (nil? (cdr x))\
+				(car x) \
+				(foldl (lambda (a b) (if (< a b) a b)) (car x) (cdr x)))))\
+		('max (lambda (x) \
+			(if (nil? (cdr x))\
+				(car x) \
+				(foldl (lambda (a b) (if (< a b) b a)) (car x) (cdr x)))))\
+		('pow __builtin_pow)))");
+
+	ingest("\
+(def (for-each proc items)\
+  	(if (nil? items)\
+   		_\
+   		(if ((lambda (x) true) (proc (car items))) \
+    			(for-each proc (cdr items)))))");
+
+	ingest("\
+(def (filter pred lst)\
+   	(if (nil? lst)\
+    		()\
+    		(if (pred (car lst))\
+     			(cons (car lst)\
+     			(filter pred (cdr lst)))\
+   	(filter pred (cdr lst)))))");
+
+	ingest("\
+(defun curry (f)\
+	(lambda (a) (lambda (b) (f a b))))");
+
+	ingest("\
+(def (reduce f l id)\
+        (if (nil? l)\
+                id\
+                (f (car l) (reduce f (cdr l) id))))");
 }
 
 #endif
