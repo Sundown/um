@@ -1,10 +1,8 @@
 ### Um
 
-:city_sunrise: <i>A Somewhat Functional Language</i>
+:city_sunrise: <i>A single-header LISP interpreter featuring garbage collection, tail-call optimisation, and macros.</i>
 
-Yes it's called Um, no it wasn't my idea.
-
-This hobby-project is still a work in progress and may be subject to (repeated) fundamental reworks.
+This repository is no longer being maintained, future updates to Um may appear in [sundown/Bias](https://github.com/sundown/Bias).
 
 **Example:**
 
@@ -21,17 +19,10 @@ This hobby-project is still a work in progress and may be subject to (repeated) 
         nil))                                       (n (+ (fib (- n 1)) (fib (- n 2))))))
 ```
 
-**Warning:**
-
-This interpreter is currently lacking many features one would commonly expect such as IO and a greater math library. These will be added and documented in the future.
-
 **Running:**
-
-First, read the [doc]() (you can't, it doesn't exist yet).
-
-Um is not ultimately intented to be a standalone interpreter, however `um_repl()` and `interpret_string()` functions are included as well as accompanying examples within `examples/`.
-
 To build examples run `cd examples/ && make`.
+
+Um is not ultimately intented to be a standalone interpreter, however `um_repl()` and `interpret_string()` functions are included as well as accompanying examples within `examples/` which demonstrate it's use as a traditional command-line interpreter. 
 
 Otherwise `#include path/um.h` in your project and build as you normally would. Specifying `-ansi` or `std=C89/C99` will not work as the interpreter is written in C11.
 
